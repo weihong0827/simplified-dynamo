@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+option go_package = "dynamo/";
+package dynamo;
+
+service KeyValueStore {
+  rpc Write(WriteRequest) returns (WriteResponse) {}
+  rpc Read(ReadRequest) returns (ReadResponse) {}
+  rpc Gossip(GossipMessage) returns (GossipAck) {}
+
+}
+
+message KeyValue {
+  string key = 1;
+  string value = 2;
+  VectorClock vector_clock = 3;
+}
+
+message VectorClock {
+  map<string, int64> timestamps = 1; // Map to hold the vector clock data
+}
+
+message WriteRequest {
+  KeyValue keyValue = 1;
+}
+
+message WriteResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ReadRequest {
+  string key = 1;
+}
+
+message ReadResponse {
+  repeated KeyValue keyValue = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+message GossipMessage {
+  repeated Node nodes = 1; // "repeated" for lists of items
+}
+
+message GossipAck {
+  bool success = 1;
+  string message = 2;
+  MembershipList membershipList =3;
+}
+
+message MembershipList {
+  repeated Node nodes = 1;
+}
+
+
+message Node {
+  int32 start = 1;
+  int32 end = 2;
+  string address = 3;
+  int32 port = 4;
+}
