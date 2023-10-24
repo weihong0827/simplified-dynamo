@@ -32,6 +32,7 @@ func main() {
 			{Addr: "localhost:50052"},
 		},
 	})
+	// TODO: Custom loadBalancingPolicy to implement consistent hashing
 
 	address := fmt.Sprintf("%s:///unused", r.Scheme())
 

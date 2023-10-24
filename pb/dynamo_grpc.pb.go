@@ -25,6 +25,12 @@ type KeyValueStoreClient interface {
 	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
 	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
+	AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*GossipAck, error)
+	RemoveNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*Empty, error)
+	// temporarily send the replica to other machines to store
+	HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error)
+	// when the node back alive again, it will send the replica back to the node
+	SendReplica(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
 }
 
 type keyValueStoreClient struct {
@@ -62,6 +68,42 @@ func (c *keyValueStoreClient) Gossip(ctx context.Context, in *GossipMessage, opt
 	return out, nil
 }
 
+func (c *keyValueStoreClient) AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*GossipAck, error) {
+	out := new(GossipAck)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/AddNewNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *keyValueStoreClient) RemoveNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/RemoveNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *keyValueStoreClient) HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/HintedHandoff", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *keyValueStoreClient) SendReplica(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*WriteResponse, error) {
+	out := new(WriteResponse)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/SendReplica", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KeyValueStoreServer is the server API for KeyValueStore service.
 // All implementations must embed UnimplementedKeyValueStoreServer
 // for forward compatibility
@@ -69,6 +111,12 @@ type KeyValueStoreServer interface {
 	Write(context.Context, *WriteRequest) (*WriteResponse, error)
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)
 	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
+	AddNewNode(context.Context, *Node) (*GossipAck, error)
+	RemoveNode(context.Context, *Node) (*Empty, error)
+	// temporarily send the replica to other machines to store
+	HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error)
+	// when the node back alive again, it will send the replica back to the node
+	SendReplica(context.Context, *BulkWriteRequest) (*WriteResponse, error)
 	mustEmbedUnimplementedKeyValueStoreServer()
 }
 
@@ -84,6 +132,18 @@ func (UnimplementedKeyValueStoreServer) Read(context.Context, *ReadRequest) (*Re
 }
 func (UnimplementedKeyValueStoreServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Gossip not implemented")
+}
+func (UnimplementedKeyValueStoreServer) AddNewNode(context.Context, *Node) (*GossipAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddNewNode not implemented")
+}
+func (UnimplementedKeyValueStoreServer) RemoveNode(context.Context, *Node) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveNode not implemented")
+}
+func (UnimplementedKeyValueStoreServer) HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HintedHandoff not implemented")
+}
+func (UnimplementedKeyValueStoreServer) SendReplica(context.Context, *BulkWriteRequest) (*WriteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendReplica not implemented")
 }
 func (UnimplementedKeyValueStoreServer) mustEmbedUnimplementedKeyValueStoreServer() {}
 
@@ -152,6 +212,78 @@ func _KeyValueStore_Gossip_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KeyValueStore_AddNewNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Node)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).AddNewNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/AddNewNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).AddNewNode(ctx, req.(*Node))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KeyValueStore_RemoveNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Node)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).RemoveNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/RemoveNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).RemoveNode(ctx, req.(*Node))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KeyValueStore_HintedHandoff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HintedHandoffWriteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).HintedHandoff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/HintedHandoff",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).HintedHandoff(ctx, req.(*HintedHandoffWriteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KeyValueStore_SendReplica_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BulkWriteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).SendReplica(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/SendReplica",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).SendReplica(ctx, req.(*BulkWriteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KeyValueStore_ServiceDesc is the grpc.ServiceDesc for KeyValueStore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -170,6 +302,22 @@ var KeyValueStore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Gossip",
 			Handler:    _KeyValueStore_Gossip_Handler,
+		},
+		{
+			MethodName: "AddNewNode",
+			Handler:    _KeyValueStore_AddNewNode_Handler,
+		},
+		{
+			MethodName: "RemoveNode",
+			Handler:    _KeyValueStore_RemoveNode_Handler,
+		},
+		{
+			MethodName: "HintedHandoff",
+			Handler:    _KeyValueStore_HintedHandoff_Handler,
+		},
+		{
+			MethodName: "SendReplica",
+			Handler:    _KeyValueStore_SendReplica_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
