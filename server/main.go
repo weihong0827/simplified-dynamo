@@ -16,6 +16,7 @@ import (
 )
 
 // server is used to implement dynamo.KeyValueStoreServer.
+// TODO: store data in memory first
 type server struct {
 	pb.UnimplementedKeyValueStoreServer
 	mu           sync.RWMutex // protects the following
