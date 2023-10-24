@@ -49,6 +49,7 @@ message HintedHandoffWriteRequest {
 
 message WriteRequest {
   KeyValue keyValue = 1;
+  isReplica bool = 2;
 }
 
 message WriteResponse {
