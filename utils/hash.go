@@ -19,11 +19,11 @@ func (a NodeSlice) Less(
 }                                 // Assuming 'Start' is a field in 'pb.Node'
 func (a NodeSlice) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
-func GetAddressFromNode(key string, nodes NodeSlice) (*pb.Node, error) {
+func GetAddressFromNode(number uint32, nodes NodeSlice) (*pb.Node, error) {
+	//BUG: Cannot pass the test check logic for search
 	if len(nodes) == 0 {
 		return nil, errors.New("no nodes available")
 	}
-	number := GenHash(key)
 	sort.Sort(nodes)
 
 	// Binary search: find the range containing the number.
@@ -31,7 +31,7 @@ func GetAddressFromNode(key string, nodes NodeSlice) (*pb.Node, error) {
 	if index == 0 {
 		return nodes[len(nodes)-1], nil
 	} else {
-		return nodes[index-1], nil
+		return nodes[index], nil
 	}
 }
 
