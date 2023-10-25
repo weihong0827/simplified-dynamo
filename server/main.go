@@ -8,7 +8,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	// healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"net"
 	"sync"
@@ -44,12 +45,14 @@ func (s *server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	// Update vector clock
 	currentClock, found := s.vectorClocks[key]
 	if !found {
-		currentClock = pb.VectorClock{Timestamps: make(map[string]int64)}
+		currentClock = pb.VectorClock{Timestamps: make(map[string]*pb.ClockStruct)}
 	}
 	nodeID := "nodeID" // this should be the ID of the current node
-	currentClock.Timestamps[nodeID] = time.Now().
-		UnixNano()
-		// Use appropriate time for your use case
+	unixNano := time.Now().UnixNano()
+	time := time.Unix(unixNano/1e9, unixNano%1e9)
+	timestamp := timestamppb.New(time)
+	currentClock.Timestamps[nodeID].Timestamp = timestamp
+	// Use appropriate time for your use case
 	s.vectorClocks[key] = currentClock
 
 	// Store the new value

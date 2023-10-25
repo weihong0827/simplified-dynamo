@@ -6,6 +6,6 @@ import (
 
 // Find out the concurrent key value pair from the vector clocks
 // Return the concurrent key value pair, or value array
-func ComapreVectorClocks(data []pb.KeyValue) {
+func CompareVectorClocks(data []pb.KeyValue) {
 	//
 }

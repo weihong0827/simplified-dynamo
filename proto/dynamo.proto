@@ -49,7 +49,7 @@ message HintedHandoffWriteRequest {
 
 message WriteRequest {
   KeyValue keyValue = 1;
-  isReplica bool = 2;
+  bool isReplica = 2;
 }
 
 message WriteResponse {
@@ -62,7 +62,7 @@ message ReadRequest {
 }
 
 message ReadResponse {
-  repeated KeyValue keyValue = 1;
+  KeyValue keyValue = 1;
   bool success = 2;
   string message = 3;
 }
