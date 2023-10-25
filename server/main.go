@@ -117,9 +117,8 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
-
 	// Register the server with the gRPC server
+	grpcServer := grpc.NewServer()
 	pb.RegisterKeyValueStoreServer(grpcServer, NewServer())
 
 	// Register the health check server with the gRPC server
