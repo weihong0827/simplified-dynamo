@@ -42,11 +42,12 @@ func main() {
 		grpc.WithDefaultServiceConfig(serviceConfig),
 	}
 
-	conn, err := grpc.Dial(address, options...)
+	conn, err := grpc.Dial("localhost:50051", options...)
 	if err != nil {
 		log.Fatalf("grpc.Dial(%q): %v", address, err)
 	}
 	defer conn.Close()
+	log.Println("Connected to", conn.Target())
 	client := pb.NewKeyValueStoreClient(conn)
 	// client.Write(context.Background(), &pb.WriteRequest{Key: "foo", Value: "bar"})
 	resp, err := client.Read(context.Background(), &pb.ReadRequest{Key: "foo"})

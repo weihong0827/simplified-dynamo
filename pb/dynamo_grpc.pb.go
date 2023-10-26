@@ -22,8 +22,6 @@ const (
 	KeyValueStore_Write_FullMethodName         = "/dynamo.KeyValueStore/Write"
 	KeyValueStore_Read_FullMethodName          = "/dynamo.KeyValueStore/Read"
 	KeyValueStore_Gossip_FullMethodName        = "/dynamo.KeyValueStore/Gossip"
-	KeyValueStore_AddNewNode_FullMethodName    = "/dynamo.KeyValueStore/AddNewNode"
-	KeyValueStore_RemoveNode_FullMethodName    = "/dynamo.KeyValueStore/RemoveNode"
 	KeyValueStore_HintedHandoff_FullMethodName = "/dynamo.KeyValueStore/HintedHandoff"
 	KeyValueStore_SendReplica_FullMethodName   = "/dynamo.KeyValueStore/SendReplica"
 )
@@ -35,8 +33,6 @@ type KeyValueStoreClient interface {
 	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
 	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
-	AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*GossipAck, error)
-	RemoveNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*Empty, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error)
 	// when the node back alive again, it will send the replica back to the node
@@ -78,24 +74,6 @@ func (c *keyValueStoreClient) Gossip(ctx context.Context, in *GossipMessage, opt
 	return out, nil
 }
 
-func (c *keyValueStoreClient) AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*GossipAck, error) {
-	out := new(GossipAck)
-	err := c.cc.Invoke(ctx, KeyValueStore_AddNewNode_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *keyValueStoreClient) RemoveNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, KeyValueStore_RemoveNode_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *keyValueStoreClient) HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, KeyValueStore_HintedHandoff_FullMethodName, in, out, opts...)
@@ -121,8 +99,6 @@ type KeyValueStoreServer interface {
 	Write(context.Context, *WriteRequest) (*WriteResponse, error)
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)
 	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
-	AddNewNode(context.Context, *Node) (*GossipAck, error)
-	RemoveNode(context.Context, *Node) (*Empty, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error)
 	// when the node back alive again, it will send the replica back to the node
@@ -142,12 +118,6 @@ func (UnimplementedKeyValueStoreServer) Read(context.Context, *ReadRequest) (*Re
 }
 func (UnimplementedKeyValueStoreServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Gossip not implemented")
-}
-func (UnimplementedKeyValueStoreServer) AddNewNode(context.Context, *Node) (*GossipAck, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AddNewNode not implemented")
-}
-func (UnimplementedKeyValueStoreServer) RemoveNode(context.Context, *Node) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RemoveNode not implemented")
 }
 func (UnimplementedKeyValueStoreServer) HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HintedHandoff not implemented")
@@ -222,42 +192,6 @@ func _KeyValueStore_Gossip_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _KeyValueStore_AddNewNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Node)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(KeyValueStoreServer).AddNewNode(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: KeyValueStore_AddNewNode_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KeyValueStoreServer).AddNewNode(ctx, req.(*Node))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _KeyValueStore_RemoveNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Node)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(KeyValueStoreServer).RemoveNode(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: KeyValueStore_RemoveNode_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KeyValueStoreServer).RemoveNode(ctx, req.(*Node))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _KeyValueStore_HintedHandoff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(HintedHandoffWriteRequest)
 	if err := dec(in); err != nil {
@@ -314,20 +248,139 @@ var KeyValueStore_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _KeyValueStore_Gossip_Handler,
 		},
 		{
-			MethodName: "AddNewNode",
-			Handler:    _KeyValueStore_AddNewNode_Handler,
-		},
-		{
-			MethodName: "RemoveNode",
-			Handler:    _KeyValueStore_RemoveNode_Handler,
-		},
-		{
 			MethodName: "HintedHandoff",
 			Handler:    _KeyValueStore_HintedHandoff_Handler,
 		},
 		{
 			MethodName: "SendReplica",
 			Handler:    _KeyValueStore_SendReplica_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "dynamo.proto",
+}
+
+const (
+	PTP_AddNewNode_FullMethodName = "/dynamo.PTP/AddNewNode"
+	PTP_Gossip_FullMethodName     = "/dynamo.PTP/Gossip"
+)
+
+// PTPClient is the client API for PTP service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type PTPClient interface {
+	AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error)
+	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
+}
+
+type pTPClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewPTPClient(cc grpc.ClientConnInterface) PTPClient {
+	return &pTPClient{cc}
+}
+
+func (c *pTPClient) AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error) {
+	out := new(MembershipList)
+	err := c.cc.Invoke(ctx, PTP_AddNewNode_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pTPClient) Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error) {
+	out := new(GossipAck)
+	err := c.cc.Invoke(ctx, PTP_Gossip_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PTPServer is the server API for PTP service.
+// All implementations must embed UnimplementedPTPServer
+// for forward compatibility
+type PTPServer interface {
+	AddNewNode(context.Context, *Node) (*MembershipList, error)
+	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
+	mustEmbedUnimplementedPTPServer()
+}
+
+// UnimplementedPTPServer must be embedded to have forward compatible implementations.
+type UnimplementedPTPServer struct {
+}
+
+func (UnimplementedPTPServer) AddNewNode(context.Context, *Node) (*MembershipList, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddNewNode not implemented")
+}
+func (UnimplementedPTPServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Gossip not implemented")
+}
+func (UnimplementedPTPServer) mustEmbedUnimplementedPTPServer() {}
+
+// UnsafePTPServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PTPServer will
+// result in compilation errors.
+type UnsafePTPServer interface {
+	mustEmbedUnimplementedPTPServer()
+}
+
+func RegisterPTPServer(s grpc.ServiceRegistrar, srv PTPServer) {
+	s.RegisterService(&PTP_ServiceDesc, srv)
+}
+
+func _PTP_AddNewNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Node)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PTPServer).AddNewNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PTP_AddNewNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PTPServer).AddNewNode(ctx, req.(*Node))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PTP_Gossip_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GossipMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PTPServer).Gossip(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PTP_Gossip_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PTPServer).Gossip(ctx, req.(*GossipMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// PTP_ServiceDesc is the grpc.ServiceDesc for PTP service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var PTP_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "dynamo.PTP",
+	HandlerType: (*PTPServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "AddNewNode",
+			Handler:    _PTP_AddNewNode_Handler,
+		},
+		{
+			MethodName: "Gossip",
+			Handler:    _PTP_Gossip_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -11,14 +11,16 @@ service KeyValueStore {
 
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 
-  rpc AddNewNode(Node) returns (GossipAck) {}
-  rpc RemoveNode(Node) returns (Empty) {}
-
   // temporarily send the replica to other machines to store 
   rpc HintedHandoff(HintedHandoffWriteRequest) returns (Empty) {}
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
 
+}
+
+service PTP {
+  rpc AddNewNode(Node) returns (MembershipList) {}
+  rpc Gossip(GossipMessage) returns (GossipAck) {}
 }
 
 message Empty {}
@@ -74,16 +76,14 @@ message GossipMessage {
 message GossipAck {
   bool success = 1;
   string message = 2;
-  MembershipList membershipList =3;
+  MembershipList membershipList = 3;
 }
 
 message MembershipList {
   repeated Node nodes = 1;
 }
 
-
 message Node {
-  uint32 start = 1;
+  uint32 id = 1;
   string address = 2;
-  uint32 port = 3;
 }
