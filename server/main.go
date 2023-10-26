@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"dynamoSimplified/config"
 	pb "dynamoSimplified/pb"
+	"dynamoSimplified/utils"
 	"flag"
 	"fmt"
 	"google.golang.org/grpc"
@@ -19,13 +21,11 @@ import (
 // TODO: store data in memory first
 type server struct {
 	pb.UnimplementedKeyValueStoreServer
-	mu           sync.RWMutex // protects the following
-	store        map[string]pb.KeyValue
-	nodes        []pb.Node // known nodes in the ring
-	vectorClocks map[string]pb.VectorClock
+	mu             sync.RWMutex // protects the following
+	store          map[string]pb.KeyValue
+	membershipList pb.MembershipList
+	vectorClocks   map[string]pb.VectorClock
 }
-
-var W int = 3
 
 func NewServer() *server {
 	return &server{
@@ -58,7 +58,7 @@ func (s *server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 
 	// Replicate write to W-1 other nodes (assuming the first write is the current node)
 	for i, _ := range s.nodes {
-		if i >= W-1 {
+		if i >= config.W-1 {
 			break
 		}
 		// Make a gRPC call to Write method of the other node
