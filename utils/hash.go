@@ -4,7 +4,6 @@ import (
 	"crypto/md5"
 	pb "dynamoSimplified/pb"
 	"encoding/binary"
-	"errors"
 	"sort"
 )
 
@@ -20,19 +19,14 @@ func (a NodeSlice) Less(
 func (a NodeSlice) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
 func GetAddressFromNode(number uint32, nodes NodeSlice) (*pb.Node, error) {
-	//BUG: Cannot pass the test check logic for search
 	if len(nodes) == 0 {
-		return nil, errors.New("no nodes available")
+		return nil, ErrNoNodesAvailable
 	}
 	sort.Sort(nodes)
 
 	// Binary search: find the range containing the number.
 	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Start > number }) - 1
-	if index == 0 {
-		return nodes[len(nodes)-1], nil
-	} else {
-		return nodes[index], nil
-	}
+	return nodes[index], nil
 }
 
 func GenHash(key string) uint32 {
