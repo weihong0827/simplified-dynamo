@@ -4,7 +4,6 @@ import (
 	"context"
 	"dynamoSimplified/config"
 	pb "dynamoSimplified/pb"
-	"dynamoSimplified/utils"
 	"flag"
 	"fmt"
 	"google.golang.org/grpc"
@@ -22,6 +21,7 @@ import (
 type server struct {
 	pb.UnimplementedKeyValueStoreServer
 	mu             sync.RWMutex // protects the following
+	port           uint32
 	store          map[string]pb.KeyValue
 	membershipList pb.MembershipList
 	vectorClocks   map[string]pb.VectorClock
@@ -47,9 +47,8 @@ func (s *server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 		currentClock = pb.VectorClock{Timestamps: make(map[string]int64)}
 	}
 	nodeID := "nodeID" // this should be the ID of the current node
-	currentClock.Timestamps[nodeID] = time.Now().
-		UnixNano()
-		// Use appropriate time for your use case
+	currentClock.Timestamps[nodeID] = time.Now().UnixNano()
+	// Use appropriate time for your use case
 	s.vectorClocks[key] = currentClock
 
 	// Store the new value
@@ -57,13 +56,9 @@ func (s *server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	s.store[key] = *in.KeyValue
 
 	// Replicate write to W-1 other nodes (assuming the first write is the current node)
-	for i, _ := range s.nodes {
-		if i >= config.W-1 {
-			break
-		}
-		// Make a gRPC call to Write method of the other node
-		// ...
-	}
+
+	// Make a gRPC call to Write method of the other node
+	// ...
 
 	return &pb.WriteResponse{Success: true}, nil
 }
@@ -78,14 +73,13 @@ func (s *server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	if !ok {
 		return &pb.ReadResponse{Success: false, Message: "Key not found"}, nil
 	}
+	if in.IsReplica {
+		replicaResult := SendRequestToReplica(key, s.membershipList.Nodes, config.READ, s.port)
+		result := append(replicaResult, &value)
+		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
+	}
 
-	// If the current node is not the coordinator, forward the read request to the coordinator
-	// ...
-
-	// Otherwise, read from R nodes
-	// ...
-
-	return &pb.ReadResponse{KeyValue: &value, Success: true}, nil
+	return &pb.ReadResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 }
 
 // Gossip implements dynamo.KeyValueStoreServer
