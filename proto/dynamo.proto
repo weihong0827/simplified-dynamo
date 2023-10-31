@@ -11,14 +11,16 @@ service KeyValueStore {
 
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 
-  rpc AddNewNode(Node) returns (GossipAck) {}
-  rpc RemoveNode(Node) returns (Empty) {}
-
   // temporarily send the replica to other machines to store 
   rpc HintedHandoff(HintedHandoffWriteRequest) returns (Empty) {}
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
 
+}
+
+service NodeServ {
+  rpc Join(Node) returns (MembershipList) {}
+  rpc Gossip(GossipMessage) returns (GossipAck) {}
 }
 
 message Empty {}
@@ -30,8 +32,8 @@ message KeyValue {
 }
 
 message ClockStruct {
-    int64 clokcVal = 1;
-    google.protobuf.Timestamp timestamp = 2;
+  int64 clokcVal = 1;
+  google.protobuf.Timestamp timestamp = 2;
 }
 
 message VectorClock {
@@ -64,28 +66,27 @@ message ReadRequest {
 }
 
 message ReadResponse {
-  repeated KeyValue keyValue = 1;
+  KeyValue keyValue = 1;
   bool success = 2;
   string message = 3;
 }
 
 message GossipMessage {
-  repeated Node nodes = 1; // "repeated" for lists of items
+  MembershipList membershipList = 1;
 }
 
 message GossipAck {
   bool success = 1;
   string message = 2;
-  MembershipList membershipList =3;
+  MembershipList membershipList = 3;
 }
 
 message MembershipList {
   repeated Node nodes = 1;
+  google.protobuf.Timestamp timestamp = 2;
 }
 
-
 message Node {
-  uint32 start = 1;
+  uint32 id = 1;
   string address = 2;
-  uint32 port = 3;
 }

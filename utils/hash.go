@@ -15,7 +15,7 @@ func (a NodeSlice) Len() int { return len(a) }
 func (a NodeSlice) Less(
 	i, j int,
 ) bool {
-	return a[i].Start < a[j].Start
+	return a[i].Id < a[j].Id
 }                                 // Assuming 'Start' is a field in 'pb.Node'
 func (a NodeSlice) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
@@ -37,7 +37,7 @@ func GetNodesFromKey(key uint32, nodes NodeSlice, op config.Operation) ([]*pb.No
 	sort.Sort(nodes)
 
 	// Binary search: find the range containing the number.
-	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Start > key }) - 1
+	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Id > key }) - 1
 
 	for i := 0; i < n; i++ {
 		indexToAdd := index + i

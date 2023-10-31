@@ -5,14 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"time"
 
+	pb "dynamoSimplified/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	_ "google.golang.org/grpc/health"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
-	pb "grpcSimplified/pb"
 )
 
 var serviceConfig = `{
@@ -43,13 +42,18 @@ func main() {
 		grpc.WithDefaultServiceConfig(serviceConfig),
 	}
 
-	conn, err := grpc.Dial(address, options...)
+	conn, err := grpc.Dial("localhost:50051", options...)
 	if err != nil {
 		log.Fatalf("grpc.Dial(%q): %v", address, err)
 	}
 	defer conn.Close()
+	log.Println("Connected to", conn.Target())
 	client := pb.NewKeyValueStoreClient(conn)
-	client.Write(context.Background(), &pb.WriteRequest{Key: "foo", Value: "bar"})
-	client.Read(context.Background(), &pb.ReadRequest{Key: "foo"})
+	// client.Write(context.Background(), &pb.WriteRequest{Key: "foo", Value: "bar"})
+	resp, err := client.Read(context.Background(), &pb.ReadRequest{Key: "foo"})
+	if err != nil {
+		log.Fatalf("failed to read key: %v with error: %v", "foo", err)
+	}
+	fmt.Println(resp.Message)
 
 }
