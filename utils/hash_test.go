@@ -1,23 +1,22 @@
 package utils
 
 import (
+	""
+	pb "dynamoSimplified/pb"
 	"errors"
 	"reflect"
 	"testing"
-
-	pb "dynamoSimplified/pb"
 )
 
-// ...
-
+// TODO: update tests
 // Test_GetAddressFromNode_EmptyNodeSlice checks the function's response with an empty slice of nodes.
-func Test_GetAddressFromNode_EmptyNodeSlice(t *testing.T) {
+func Test_GetNodesFromKey_EmptyNodeSlice(t *testing.T) {
 	nodes := NodeSlice{}
 	var key uint32 = 1
 
-	node, err := GetAddressFromNode(key, nodes)
+	node, err := GetNodesFromKey(key, nodes)
 
-	if node != nil || !errors.Is(err, errors.New("no nodes available")) {
+	if node != nil || !errors.Is(err, ErrNoNodesAvailable) {
 		t.Errorf("Expected no nodes available error, got %v and node %v", err, node)
 	}
 }
@@ -89,8 +88,9 @@ func Test_GetAddressFromNode_UnsortedNodes(t *testing.T) {
 
 	// The function is expected to sort nodes, so it should not return an error or incorrect node
 	result, err := GetAddressFromNode(key, nodes)
+	expectedNode := nodes[0]
 
-	if err != nil || result.Start == 1 {
+	if err != nil || !reflect.DeepEqual(result, expectedNode) {
 		t.Errorf("Expected correct node based on sorting, got node %v with error %v", result, err)
 	}
 }

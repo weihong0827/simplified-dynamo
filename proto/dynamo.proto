@@ -61,6 +61,8 @@ message WriteResponse {
 
 message ReadRequest {
   string key = 1;
+  bool isReplica = 2;
+  
 }
 
 message ReadResponse {

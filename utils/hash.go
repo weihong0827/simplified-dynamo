@@ -2,9 +2,9 @@ package utils
 
 import (
 	"crypto/md5"
+	"dynamoSimplified/config"
 	pb "dynamoSimplified/pb"
 	"encoding/binary"
-	"errors"
 	"sort"
 )
 
@@ -19,20 +19,36 @@ func (a NodeSlice) Less(
 }                                 // Assuming 'Start' is a field in 'pb.Node'
 func (a NodeSlice) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
-func GetAddressFromNode(number uint32, nodes NodeSlice) (*pb.Node, error) {
-	//BUG: Cannot pass the test check logic for search
+func GetNodesFromKey(key uint32, nodes NodeSlice, op config.Operation) ([]*pb.Node, error) {
 	if len(nodes) == 0 {
-		return nil, errors.New("no nodes available")
+		return nil, ErrNoNodesAvailable
 	}
+
+	var n int
+	var result []*pb.Node
+
+	switch op {
+	case config.READ:
+		n = config.R
+	case config.WRITE:
+		n = config.W
+	}
+
 	sort.Sort(nodes)
 
 	// Binary search: find the range containing the number.
-	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Id > number }) - 1
-	if index == 0 {
-		return nodes[len(nodes)-1], nil
-	} else {
-		return nodes[index], nil
+	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Start > key }) - 1
+
+	for i := 0; i < n; i++ {
+		indexToAdd := index + i
+		if indexToAdd == len(nodes) {
+			indexToAdd = 0
+		}
+		result = append(result, nodes[indexToAdd])
+
 	}
+
+	return result, nil
 }
 
 func GenHash(key string) uint32 {

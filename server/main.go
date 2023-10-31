@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"dynamoSimplified/config"
 	pb "dynamoSimplified/pb"
 	"flag"
 	"fmt"
@@ -19,13 +20,12 @@ import (
 // TODO: store data in memory first
 type server struct {
 	pb.UnimplementedKeyValueStoreServer
-	mu           sync.RWMutex // protects the following
-	store        map[string]pb.KeyValue
-	nodes        []pb.Node // known nodes in the ring
-	vectorClocks map[string]pb.VectorClock
+	mu             sync.RWMutex // protects the following
+	port           uint32
+	store          map[string]pb.KeyValue
+	membershipList pb.MembershipList
+	vectorClocks   map[string]pb.VectorClock
 }
-
-var W int = 3
 
 func NewServer() *server {
 	return &server{
@@ -47,10 +47,7 @@ func (s *server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 		currentClock = pb.VectorClock{Timestamps: make(map[string]*pb.ClockStruct)}
 	}
 	nodeID := "nodeID" // this should be the ID of the current node
-	unixNano := time.Now().UnixNano()
-	time := time.Unix(unixNano/1e9, unixNano%1e9)
-	timestamp := timestamppb.New(time)
-	currentClock.Timestamps[nodeID].Timestamp = timestamp
+	currentClock.Timestamps[nodeID] = time.Now().UnixNano()
 	// Use appropriate time for your use case
 	s.vectorClocks[key] = currentClock
 
@@ -59,13 +56,9 @@ func (s *server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	s.store[key] = *in.KeyValue
 
 	// Replicate write to W-1 other nodes (assuming the first write is the current node)
-	for i, _ := range s.nodes {
-		if i >= W-1 {
-			break
-		}
-		// Make a gRPC call to Write method of the other node
-		// ...
-	}
+
+	// Make a gRPC call to Write method of the other node
+	// ...
 
 	return &pb.WriteResponse{Success: true}, nil
 }
@@ -81,14 +74,13 @@ func (s *server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	if !ok {
 		return &pb.ReadResponse{Success: false, Message: "Key not found"}, nil
 	}
+	if in.IsReplica {
+		replicaResult := SendRequestToReplica(key, s.membershipList.Nodes, config.READ, s.port)
+		result := append(replicaResult, &value)
+		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
+	}
 
-	// If the current node is not the coordinator, forward the read request to the coordinator
-	// ...
-
-	// Otherwise, read from R nodes
-	// ...
-
-	return &pb.ReadResponse{KeyValue: &value, Success: true}, nil
+	return &pb.ReadResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 }
 
 // Gossip implements dynamo.KeyValueStoreServer
