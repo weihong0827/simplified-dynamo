@@ -4,8 +4,11 @@ import (
 	"context"
 	pb "dynamoSimplified/pb"
 	utils "dynamoSimplified/utils"
+	"google.golang.org/grpc"
 	"log"
+	"math/rand"
 	"sync"
+	"time"
 )
 
 type PTPNode struct {
@@ -48,17 +51,36 @@ func (s *PTPServer) Serve(ctx context.Context) {
 		case <-ctx.Done():
 			break
 		default:
+			{
+				func() {
+					time.Sleep(3 * time.Second)
+					log.Printf("Sending gossip...")
+					s.SendGossip(ctx)
+					time.Sleep(1 * time.Second)
+				}()
+			}
+			{
+				func() {
+					// print my membership list
+					s.mux.Lock()
+					defer s.mux.Unlock()
+					for _, node := range s.MembershipList {
+						log.Printf("Node %d: %s", node.Id, node.Address)
+					}
+				}()
+			}
+			// TODO: gossip
 
 		}
 	}
 }
 
-// node 2 join node 1
 func (s *PTPServer) AddNewNode(ctx context.Context, in *pb.Node) (*pb.MembershipList, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
+	// add new node to membership list
 	s.MembershipList = append(s.MembershipList, &PTPNode{in.Id, in.Address})
-	log.Printf("Node %d joined", in.Id)
+	log.Printf("Node %s joined", in.Address)
 	// print new membershiplist
 	for _, node := range s.MembershipList {
 		log.Printf("Node %d: %s", node.Id, node.Address)
@@ -68,9 +90,11 @@ func (s *PTPServer) AddNewNode(ctx context.Context, in *pb.Node) (*pb.Membership
 
 func (s *PTPServer) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAck, error) {
 	s.mux.Lock()
-	defer s.mux.Unlock()
 	// Compare membership list
-
+	s.MembershipList = convertPBNodetoNode(in.Nodes)
+	s.mux.Unlock()
+	// Update membership list
+	return &pb.GossipAck{}, nil
 }
 
 func convertToPBNode(node []*PTPNode) []*pb.Node {
@@ -89,21 +113,36 @@ func convertToPBNode(node []*PTPNode) []*pb.Node {
 // 	s.AddNewNode(ctx, node)
 // }
 
-// node 0 create server
+// function to send gossip to other nodes
+func (s *PTPServer) SendGossip(ctx context.Context) {
+	// randomly pick one other node from membership list
+	// send gossip to that node
 
-// node 1 join node 0
-// node1.membershiplist -> node1, node0 t=x
+	log.Printf("Inside gossip...")
+	s.mux.Lock()
+	// pick random node
+	rand.Seed(time.Now().UnixNano())
+	randIndex := rand.Intn(len(s.MembershipList))
+	randNode := s.MembershipList[randIndex]
+	// create grpc client
+	log.Printf("Gossiping to %d at %v", randNode.Id, randNode.Address)
+	conn, err := grpc.Dial(randNode.Address, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
 
-// node 2 join node 0
-// node2.membershiplist -> node2, node0 t=x+10
-
-// gossip node1 -> node0
-// node0.membershiplist -> node1, node0 t=x+20
-
-// gossip node2 -> node0
-// node0.membershiplist -> node2, node1, node0
-
-// node2 mati, node0 tau
-// node0.membershiplist -> node1, node0
-
-// node0 gossip -> node1
+	client := pb.NewPTPClient(conn)
+	// send gossip
+	memList := convertToPBNode(s.MembershipList)
+	s.mux.Unlock()
+	resp, err := client.Gossip(ctx, &pb.GossipMessage{Nodes: memList})
+	if err != nil {
+		log.Fatalf("%d failed to gossip to %d at %v, retrying...", s.self.Id, randNode.Id, randNode.Address)
+	} else {
+		log.Printf("%d gossiped successfully", s.self.Id)
+	}
+	// log response
+	log.Printf("Gossip response: %v", resp)
+	// update membership list
+}

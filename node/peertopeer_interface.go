@@ -7,13 +7,12 @@ import (
 	"log"
 	"net"
 	"sync"
-	"time"
+	// "time"
 )
 
-func ServePTP(ctx context.Context, node *PTPNode, bootstrap_node *PTPNode, group *sync.WaitGroup, join *sync.WaitGroup) {
-	// setup logger
+func ServePTP(ctx context.Context, node *PTPNode, seed_node *PTPNode, group *sync.WaitGroup, join *sync.WaitGroup) {
 	defer group.Done()
-	// setup Chord instances
+
 	server := NewPTPServer(node.Address)
 	lis, err := net.Listen("tcp", node.Address)
 	if err != nil {
@@ -29,7 +28,6 @@ func ServePTP(ctx context.Context, node *PTPNode, bootstrap_node *PTPNode, group
 	ch := make(chan bool)
 
 	// begin background tasks
-	go server.Serve(ctx)
 
 	// handle RPCs
 	go func() {
@@ -39,20 +37,29 @@ func ServePTP(ctx context.Context, node *PTPNode, bootstrap_node *PTPNode, group
 		ch <- true
 	}()
 
-	// bootstrap node
-	if bootstrap_node != nil {
-		for {
-			memlist, err := server.AddNewNode(ctx, convertPTPNodetoPBNode(bootstrap_node))
-			server.MembershipList = convertPBNodetoNode(memlist.Nodes)
-			if err != nil {
-				log.Fatalf("%d failed to join %d at %v, retrying...", node.Id, bootstrap_node.Id, bootstrap_node.Address)
-			} else {
-				log.Printf("%d joined successfully", node.Id)
-				break
-			}
-			time.Sleep(time.Second)
+	// seed node
+	if seed_node != nil {
+		// create grpc client
+		conn, err := grpc.Dial(seed_node.Address, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
 		}
+		defer conn.Close()
+
+		client := pb.NewPTPClient(conn)
+		// join the seed node
+		resp, err := client.AddNewNode(ctx, convertPTPNodetoPBNode(node))
+		if err != nil {
+			log.Fatalf("%d failed to join %d at %v, retrying...", node.Id, seed_node.Id, seed_node.Address)
+		} else {
+			log.Printf("%d joined successfully", node.Id)
+		}
+		server.mux.Lock()
+		server.MembershipList = convertPBNodetoNode(resp.Nodes)
+		server.mux.Unlock()
 	}
+
+	go server.Serve(ctx)
 
 	// node has joined
 	if join != nil {
