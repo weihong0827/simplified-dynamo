@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"dynamoSimplified/config"
+	// "dynamoSimplified/config"
 	pb "dynamoSimplified/pb"
 	utils "dynamoSimplified/utils"
 	"flag"
@@ -43,6 +43,7 @@ func NewServer(addr string) *Server {
 	}
 }
 
+/*
 // Write implements dynamo.KeyValueStoreServer
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
@@ -102,6 +103,7 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 
 	return &pb.GossipAck{Success: true}, nil
 }
+*/
 
 // Join implements dynamo.NodeServServer
 func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, error) {
