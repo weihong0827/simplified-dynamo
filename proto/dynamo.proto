@@ -32,8 +32,8 @@ message KeyValue {
 }
 
 message ClockStruct {
-    int64 clokcVal = 1;
-    google.protobuf.Timestamp timestamp = 2;
+  int64 clokcVal = 1;
+  google.protobuf.Timestamp timestamp = 2;
 }
 
 message VectorClock {
@@ -71,6 +71,7 @@ message ReadResponse {
 
 message GossipMessage {
   repeated Node nodes = 1; // "repeated" for lists of items
+  google.protobuf.Timestamp timestampGossip = 2;
 }
 
 message GossipAck {

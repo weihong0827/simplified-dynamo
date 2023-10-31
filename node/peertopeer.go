@@ -5,6 +5,7 @@ import (
 	pb "dynamoSimplified/pb"
 	utils "dynamoSimplified/utils"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"math/rand"
 	"sync"
@@ -121,7 +122,7 @@ func (s *PTPServer) SendGossip(ctx context.Context) {
 	log.Printf("Inside gossip...")
 	s.mux.Lock()
 	// pick random node
-	rand.Seed(time.Now().UnixNano())
+	// rand.Seed(time.Now().UnixNano())
 	randIndex := rand.Intn(len(s.MembershipList))
 	randNode := s.MembershipList[randIndex]
 	// create grpc client
@@ -136,7 +137,8 @@ func (s *PTPServer) SendGossip(ctx context.Context) {
 	// send gossip
 	memList := convertToPBNode(s.MembershipList)
 	s.mux.Unlock()
-	resp, err := client.Gossip(ctx, &pb.GossipMessage{Nodes: memList})
+	// resp, err := client.Gossip(ctx, &pb.GossipMessage{Nodes: memList})
+	resp, err := client.Gossip(ctx, &pb.GossipMessage{Nodes: memList, TimestampGossip: timestamppb.Now()})
 	if err != nil {
 		log.Fatalf("%d failed to gossip to %d at %v, retrying...", s.self.Id, randNode.Id, randNode.Address)
 	} else {
