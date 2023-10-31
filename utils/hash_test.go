@@ -1,7 +1,6 @@
 package utils
 
 import (
-	""
 	pb "dynamoSimplified/pb"
 	"errors"
 	"reflect"

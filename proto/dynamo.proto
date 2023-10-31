@@ -18,8 +18,8 @@ service KeyValueStore {
 
 }
 
-service PTP {
-  rpc AddNewNode(Node) returns (MembershipList) {}
+service NodeServ {
+  rpc Join(Node) returns (MembershipList) {}
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 }
 
@@ -72,8 +72,7 @@ message ReadResponse {
 }
 
 message GossipMessage {
-  repeated Node nodes = 1; // "repeated" for lists of items
-  google.protobuf.Timestamp timestampGossip = 2;
+  MembershipList membershipList = 1;
 }
 
 message GossipAck {
@@ -84,6 +83,7 @@ message GossipAck {
 
 message MembershipList {
   repeated Node nodes = 1;
+  google.protobuf.Timestamp timestamp = 2;
 }
 
 message Node {

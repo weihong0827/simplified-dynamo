@@ -261,126 +261,126 @@ var KeyValueStore_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PTP_AddNewNode_FullMethodName = "/dynamo.PTP/AddNewNode"
-	PTP_Gossip_FullMethodName     = "/dynamo.PTP/Gossip"
+	NodeServ_Join_FullMethodName   = "/dynamo.NodeServ/Join"
+	NodeServ_Gossip_FullMethodName = "/dynamo.NodeServ/Gossip"
 )
 
-// PTPClient is the client API for PTP service.
+// NodeServClient is the client API for NodeServ service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type PTPClient interface {
-	AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error)
+type NodeServClient interface {
+	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error)
 	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
 }
 
-type pTPClient struct {
+type nodeServClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewPTPClient(cc grpc.ClientConnInterface) PTPClient {
-	return &pTPClient{cc}
+func NewNodeServClient(cc grpc.ClientConnInterface) NodeServClient {
+	return &nodeServClient{cc}
 }
 
-func (c *pTPClient) AddNewNode(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error) {
+func (c *nodeServClient) Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error) {
 	out := new(MembershipList)
-	err := c.cc.Invoke(ctx, PTP_AddNewNode_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, NodeServ_Join_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *pTPClient) Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error) {
+func (c *nodeServClient) Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error) {
 	out := new(GossipAck)
-	err := c.cc.Invoke(ctx, PTP_Gossip_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, NodeServ_Gossip_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// PTPServer is the server API for PTP service.
-// All implementations must embed UnimplementedPTPServer
+// NodeServServer is the server API for NodeServ service.
+// All implementations must embed UnimplementedNodeServServer
 // for forward compatibility
-type PTPServer interface {
-	AddNewNode(context.Context, *Node) (*MembershipList, error)
+type NodeServServer interface {
+	Join(context.Context, *Node) (*MembershipList, error)
 	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
-	mustEmbedUnimplementedPTPServer()
+	mustEmbedUnimplementedNodeServServer()
 }
 
-// UnimplementedPTPServer must be embedded to have forward compatible implementations.
-type UnimplementedPTPServer struct {
+// UnimplementedNodeServServer must be embedded to have forward compatible implementations.
+type UnimplementedNodeServServer struct {
 }
 
-func (UnimplementedPTPServer) AddNewNode(context.Context, *Node) (*MembershipList, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AddNewNode not implemented")
+func (UnimplementedNodeServServer) Join(context.Context, *Node) (*MembershipList, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Join not implemented")
 }
-func (UnimplementedPTPServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
+func (UnimplementedNodeServServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Gossip not implemented")
 }
-func (UnimplementedPTPServer) mustEmbedUnimplementedPTPServer() {}
+func (UnimplementedNodeServServer) mustEmbedUnimplementedNodeServServer() {}
 
-// UnsafePTPServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to PTPServer will
+// UnsafeNodeServServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to NodeServServer will
 // result in compilation errors.
-type UnsafePTPServer interface {
-	mustEmbedUnimplementedPTPServer()
+type UnsafeNodeServServer interface {
+	mustEmbedUnimplementedNodeServServer()
 }
 
-func RegisterPTPServer(s grpc.ServiceRegistrar, srv PTPServer) {
-	s.RegisterService(&PTP_ServiceDesc, srv)
+func RegisterNodeServServer(s grpc.ServiceRegistrar, srv NodeServServer) {
+	s.RegisterService(&NodeServ_ServiceDesc, srv)
 }
 
-func _PTP_AddNewNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _NodeServ_Join_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Node)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(PTPServer).AddNewNode(ctx, in)
+		return srv.(NodeServServer).Join(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: PTP_AddNewNode_FullMethodName,
+		FullMethod: NodeServ_Join_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PTPServer).AddNewNode(ctx, req.(*Node))
+		return srv.(NodeServServer).Join(ctx, req.(*Node))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PTP_Gossip_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _NodeServ_Gossip_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GossipMessage)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(PTPServer).Gossip(ctx, in)
+		return srv.(NodeServServer).Gossip(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: PTP_Gossip_FullMethodName,
+		FullMethod: NodeServ_Gossip_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PTPServer).Gossip(ctx, req.(*GossipMessage))
+		return srv.(NodeServServer).Gossip(ctx, req.(*GossipMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// PTP_ServiceDesc is the grpc.ServiceDesc for PTP service.
+// NodeServ_ServiceDesc is the grpc.ServiceDesc for NodeServ service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var PTP_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "dynamo.PTP",
-	HandlerType: (*PTPServer)(nil),
+var NodeServ_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "dynamo.NodeServ",
+	HandlerType: (*NodeServServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "AddNewNode",
-			Handler:    _PTP_AddNewNode_Handler,
+			MethodName: "Join",
+			Handler:    _NodeServ_Join_Handler,
 		},
 		{
 			MethodName: "Gossip",
-			Handler:    _PTP_Gossip_Handler,
+			Handler:    _NodeServ_Gossip_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
