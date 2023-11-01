@@ -5,12 +5,15 @@ import (
 	"dynamoSimplified/config"
 	hash "dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
+	"encoding/json"
 	"flag"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -25,6 +28,10 @@ type Server struct {
 	store          map[string]pb.KeyValue
 	membershipList *pb.MembershipList
 	vectorClocks   map[string]pb.VectorClock
+}
+
+type GetResponse struct {
+	Message string `json:"message"`
 }
 
 func NewServer(addr string) *Server {
@@ -137,10 +144,8 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 	// Update nodes based on the received gossip message
 	s.membershipList = ReconcileMembershipList(s.membershipList, in.MembershipList)
 
-	// log membershipList
-	log.Printf("membershipList at node %v\n", s.addr)
 	for _, node := range s.membershipList.Nodes {
-		log.Println(node.Address)
+		log.Printf("%v %v", node.Address, node.IsAlive)
 	}
 
 	return &pb.GossipAck{Success: true}, nil
@@ -219,6 +224,8 @@ func (s *Server) SendGossip(ctx context.Context) {
 			continue
 		}
 
+		log.Printf("Gossip response: %v", resp)
+
 		s.mu.Unlock()
 
 		time.Sleep(time.Second * 5)
@@ -229,9 +236,35 @@ func (s *Server) Ping(ctx context.Context, in *pb.PingRequest) (*pb.PingResponse
 	return &pb.PingResponse{}, nil
 }
 
+func getSeedNodeAddr(webclient string) string {
+	// call get rest api to webclient address
+	// get the seed node address
+	// Make a GET request to the API. {message: "addr"}
+	resp, err := http.Get(webclient)
+	if err != nil {
+		log.Fatalf("Failed to make the request: %v", err)
+	}
+
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("Failed to read the response body: %v", err)
+	}
+
+	log.Printf("Response body: %v", string(body))
+
+	var data GetResponse
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		log.Fatalf("Failed to unmarshal the response body: %v", err)
+	}
+
+	return data.Message
+}
+
 var (
 	addr      = flag.String("addr", "127.0.0.1:50051", "the addr to serve on")
-	seed_addr = flag.String("seed_addr", "", "the addr of the seed node")
+	webclient = flag.String("webclient", "", "the addr of the seed node")
 	sleep     = flag.Duration("sleep", time.Second*5, "duration between changes in health")
 
 	system = "" // empty string represents the health of the system
@@ -260,10 +293,13 @@ func main() {
 	}()
 
 	// join the seed node if not empty
-	if *seed_addr != "" {
+	if *webclient != "" {
+		// call get rest api to webclient address
+		// get the seed node address
+		seed_addr := getSeedNodeAddr(*webclient)
 
 		// create grpc client
-		conn, err := grpc.Dial(*seed_addr, grpc.WithInsecure())
+		conn, err := grpc.Dial(seed_addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
