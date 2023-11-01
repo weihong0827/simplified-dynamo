@@ -173,6 +173,10 @@ func (s *Server) SendGossip(ctx context.Context) {
 	}
 }
 
+func (s *Server) Ping(ctx context.Context, in *pb.PingRequest) (*pb.PingResponse, error) {
+	return &pb.PingResponse{}, nil
+}
+
 var (
 	addr      = flag.String("addr", "127.0.0.1:50051", "the addr to serve on")
 	seed_addr = flag.String("seed_addr", "", "the addr of the seed node")

@@ -6,6 +6,8 @@ import "google/protobuf/timestamp.proto";
 
 service KeyValueStore {
 
+  rpc Ping(PingRequest) returns (PingResponse) {}
+
   rpc Write(WriteRequest) returns (WriteResponse) {}
   rpc Read(ReadRequest) returns (ReadResponse) {}
 
@@ -89,4 +91,12 @@ message MembershipList {
 message Node {
   uint32 id = 1;
   string address = 2;
+}
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingResponse {
+  string message = 1;
 }
