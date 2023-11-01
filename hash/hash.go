@@ -19,35 +19,41 @@ func (a NodeSlice) Less(
 }                                 // Assuming 'Start' is a field in 'pb.Node'
 func (a NodeSlice) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
-func GetNodesFromKey(key uint32, nodes NodeSlice, op config.Operation) ([]*pb.Node, error) {
+func GetNodesFromKey(key uint32, nodes NodeSlice) ([]*pb.Node, error) {
 	if len(nodes) == 0 {
 		return nil, ErrNoNodesAvailable
 	}
 
-	var n int
-	var result []*pb.Node
+	var offsets []int
 
-	switch op {
-	case config.READ:
-		n = config.R
-	case config.WRITE:
-		n = config.W
+	for i := 0; i < config.N; i++ {
+		offsets = append(offsets, i)
 	}
+	return GetNodeFromKeyWithOffSet(offsets, key, nodes)
+}
+
+func GetNodeFromKeyWithOffSet(
+	offsets []int,
+	key uint32,
+	nodes NodeSlice,
+) ([]*pb.Node, error) {
+	if len(nodes) == 0 {
+		return nil, ErrNoNodesAvailable
+	}
+
+	var result []*pb.Node
 
 	sort.Sort(nodes)
 
 	// Binary search: find the range containing the number.
 	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Id > key }) - 1
-
-	for i := 0; i < n; i++ {
-		indexToAdd := index + i
-		if indexToAdd == len(nodes) {
-			indexToAdd = 0
-		}
+	for offset, _ := range offsets {
+		indexToAdd := (index + offset) % len(nodes)
 		result = append(result, nodes[indexToAdd])
-
 	}
+
 	return result, nil
+
 }
 
 //TODO: write function to get successive k nodes for hinted handoff
