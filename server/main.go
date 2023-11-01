@@ -138,15 +138,18 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, err
 
 // Gossip implements dynamo.KeyValueStoreServer
 func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAck, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// Update nodes based on the received gossip message
+	s.mu.Lock()
 	s.membershipList = ReconcileMembershipList(s.membershipList, in.MembershipList)
-
+	log.Println("Membership list:")
 	for _, node := range s.membershipList.Nodes {
-		log.Printf("%v %v", node.Address, node.IsAlive)
+		if node.IsAlive {
+			log.Printf("Node %v is alive", node.Address)
+		} else {
+			log.Printf("Node %v is dead", node.Address)
+		}
 	}
+	s.mu.Unlock()
 
 	return &pb.GossipAck{Success: true}, nil
 }
@@ -179,14 +182,12 @@ func ReconcileMembershipList(list1 *pb.MembershipList, list2 *pb.MembershipList)
 // create a method to periodically send gossip message to other nodes
 func (s *Server) SendGossip(ctx context.Context) {
 	for {
-		s.mu.Lock()
-
 		// randomly pick one other node from membership list
 		// send gossip to that node
+		s.mu.RLock()
 		targetNode := s.membershipList.Nodes[rand.Intn(len(s.membershipList.Nodes))]
+		s.mu.RUnlock()
 		if targetNode.Address == s.addr {
-			s.mu.Unlock()
-			time.Sleep(time.Second * 1)
 			continue
 		}
 
@@ -195,6 +196,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		if err != nil {
 			log.Printf("fail to dial: %v", err)
 			// update membership list to change isAlive to false
+			s.mu.Lock()
 			for _, node := range s.membershipList.Nodes {
 				if node.Address == targetNode.Address {
 					node.IsAlive = false
@@ -203,16 +205,21 @@ func (s *Server) SendGossip(ctx context.Context) {
 					break
 				}
 			}
+			continue
 		}
 		defer conn.Close()
 
 		client := pb.NewKeyValueStoreClient(conn)
 
 		// send gossip message
-		resp, err := client.Gossip(ctx, &pb.GossipMessage{MembershipList: s.membershipList})
+		s.mu.RLock()
+		membershipList := s.membershipList
+		s.mu.RUnlock()
+		resp, err := client.Gossip(ctx, &pb.GossipMessage{MembershipList: membershipList})
 		if err != nil {
-			log.Printf("fail to send gossip: %v", err)
+			log.Printf("fail to send gossip to %v", targetNode.Address)
 			// update membership list to change isAlive to false
+			s.mu.Lock()
 			for _, node := range s.membershipList.Nodes {
 				if node.Address == targetNode.Address {
 					node.IsAlive = false
@@ -224,11 +231,18 @@ func (s *Server) SendGossip(ctx context.Context) {
 			continue
 		}
 
-		log.Printf("Gossip response: %v", resp)
-
-		s.mu.Unlock()
-
-		time.Sleep(time.Second * 1)
+		if resp.Success {
+			s.mu.Lock()
+			for _, node := range s.membershipList.Nodes {
+				if node.Address == targetNode.Address {
+					node.IsAlive = true
+					node.Timestamp = timestamppb.Now()
+					s.mu.Unlock()
+					break
+				}
+			}
+		}
+		time.Sleep(time.Second * 5)
 	}
 }
 
