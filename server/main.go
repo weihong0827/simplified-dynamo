@@ -186,7 +186,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		targetNode := s.membershipList.Nodes[rand.Intn(len(s.membershipList.Nodes))]
 		if targetNode.Address == s.addr {
 			s.mu.Unlock()
-			time.Sleep(time.Second * 5)
+			time.Sleep(time.Second * 1)
 			continue
 		}
 
@@ -228,7 +228,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 
 		s.mu.Unlock()
 
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * 1)
 	}
 }
 
@@ -292,14 +292,11 @@ func main() {
 		}
 	}()
 
+	addrToJoin := getSeedNodeAddr(*webclient)
 	// join the seed node if not empty
-	if *webclient != "" {
-		// call get rest api to webclient address
-		// get the seed node address
-		seed_addr := getSeedNodeAddr(*webclient)
-
+	if addrToJoin != "" {
 		// create grpc client
-		conn, err := grpc.Dial(seed_addr, grpc.WithInsecure())
+		conn, err := grpc.Dial(addrToJoin, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
@@ -310,7 +307,7 @@ func main() {
 		// join the seed node
 		resp, err := client.Join(context.Background(), &pb.Node{Id: hash.GenHash(*addr), Address: *addr, Timestamp: timestamppb.Now(), IsAlive: true})
 		if err != nil {
-			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, seed_addr, seed_addr)
+			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, addrToJoin, addrToJoin)
 		} else {
 			log.Printf("%d joined successfully", server.id)
 		}

@@ -119,7 +119,7 @@ func SendRequestToReplica(
 	op config.Operation,
 	currAddr string,
 ) []*pb.KeyValue {
-	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes, config.READ)
+	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes)
 	if err != nil {
 		log.Println("Error obtaining nodes for key:", err)
 		return nil

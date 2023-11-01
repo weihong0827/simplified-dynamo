@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"dynamoSimplified/config"
+	// "dynamoSimplified/config"
 	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"net/http"
@@ -27,13 +27,11 @@ var servers []Server
 var mutex = &sync.Mutex{}
 
 func main() {
-	// Initialize the list of backend servers
+	// Initialize the list of backend servers NEED TO RUN AT LEAST 3 NODES
 	servers = []Server{
-		{&pb.Node{Id: hash.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
-		{&pb.Node{Id: hash.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
-		{&pb.Node{Id: hash.GenHash("127.0.0.1:50053"), Address: "127.0.0.1:50053"}, nil},
-		{&pb.Node{Id: hash.GenHash("127.0.0.1:50054"), Address: "127.0.0.1:50054"}, nil},
-		{&pb.Node{Id: hash.GenHash("127.0.0.1:50055"), Address: "127.0.0.1:50055"}, nil},
+		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
+		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
+		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50053"), Address: "127.0.0.1:50053"}, nil},
 	}
 
 	// Establish gRPC connections to all servers
@@ -77,16 +75,16 @@ func main() {
 
 		port := c.Query("port")
 		hashVal := hash.GenHash("127.0.0.1:" + port)
-		nodes, err := hash.GetNodesFromKey(hashVal, getServersAddresses(servers), config.READ)
+		node, err := hash.GetResponsibleNode(hashVal, getServersAddresses(servers))
+		conn, err := grpc.Dial(node, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		servers = append(servers, Server{&pb.Node{Id: hashVal, Address: "127.0.0.1:" + port}, conn})
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		nodeToContact := nodes[0]
-
-		c.JSON(http.StatusOK, gin.H{"message": nodeToContact.Address})
+		c.JSON(http.StatusOK, gin.H{"message": node})
 	})
 
 	router.PUT("/put", func(c *gin.Context) {
