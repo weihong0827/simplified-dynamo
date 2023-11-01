@@ -1,4 +1,4 @@
-package utils
+package hash
 
 import (
 	"crypto/md5"
@@ -47,9 +47,10 @@ func GetNodesFromKey(key uint32, nodes NodeSlice, op config.Operation) ([]*pb.No
 		result = append(result, nodes[indexToAdd])
 
 	}
-
 	return result, nil
 }
+
+//TODO: write function to get successive k nodes for hinted handoff
 
 func GenHash(key string) uint32 {
 	h := md5.New()

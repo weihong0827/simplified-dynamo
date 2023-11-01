@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"dynamoSimplified/config"
+	"dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
-	"dynamoSimplified/utils"
 	"fmt"
-	"google.golang.org/grpc"
 	"log"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/grpc"
 )
 
 const (
@@ -19,17 +20,17 @@ const (
 )
 
 // GRPCOperation represents a function type for gRPC operations.
-type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, key string, result chan<- *pb.KeyValue) error
+type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv pb.KeyValue, result chan<- *pb.KeyValue) error
 
 // Make a gRPC read call.
 func performRead(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
-	key string,
+	kv pb.KeyValue,
 	result chan<- *pb.KeyValue,
 ) error {
 
-	r, err := client.Read(ctx, &pb.ReadRequest{Key: key, IsReplica: false})
+	r, err := client.Read(ctx, &pb.ReadRequest{Key: kv.Key, IsReplica: true})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
 	}
@@ -45,7 +46,7 @@ func performRead(
 func performWrite(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
-	key string,
+	kv pb.KeyValue,
 	result chan<- *pb.KeyValue,
 ) error {
 
@@ -54,14 +55,40 @@ func performWrite(
 
 	// Here's a hypothetical write success message. Adjust it to match your actual API.
 	// result <- pb.KeyValue{Key: key, Value: "Write Successful!"}
+	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: &kv, IsReplica: true})
+	if err != nil {
+		return fmt.Errorf(replicaError, err)
+	}
+	if r.Success {
+		result <- r.KeyValue[0]
+	} else {
+		return fmt.Errorf(replicaError, "unexpected response format")
+	}
 	return nil
+}
+func performHintedHandoffWrite(
+	ctx context.Context,
+	client pb.KeyValueStoreClient,
+	kv pb.KeyValue,
+	result chan<- *pb.KeyValue,
+) error {
+	//TODO: call the write and handle error and return
+	return nil
+}
+
+func createGRPCConnection(address string) (*grpc.ClientConn, error) {
+	conn, err := grpc.Dial(address, grpc.WithInsecure())
+	if err != nil {
+		return nil, fmt.Errorf(connectionError, err)
+	}
+	return conn, nil
 }
 
 // grpcCall performs the given gRPC operation on the specified node.
 func grpcCall(
 	ctx context.Context,
 	node *pb.Node,
-	key string,
+	kv pb.KeyValue,
 	op GRPCOperation,
 	timeout time.Duration,
 	result chan<- *pb.KeyValue,
@@ -72,21 +99,27 @@ func grpcCall(
 	conn, err := createGRPCConnection(node.Address)
 	if err != nil {
 		return err
+		//TODO: update membership list.
+		//check op its a write req or read req
+		// if write
+		//TODO need to check what the error is and if needed perform hinted handoff
+		// create connection
+		// set op to performHintedHandoff
 	}
 	defer conn.Close()
 
 	client := pb.NewKeyValueStoreClient(conn)
-	return op(callCtx, client, key, result)
+	return op(callCtx, client, kv, result)
 }
 
 // Sends requests to the appropriate replicas.
 func SendRequestToReplica(
-	key string,
-	nodes utils.NodeSlice,
+	kv pb.KeyValue,
+	nodes hash.NodeSlice,
 	op config.Operation,
-	currentMachinePort uint32,
+	currAddr string,
 ) []*pb.KeyValue {
-	targetNodes, err := utils.GetNodesFromKey(utils.GenHash(key), nodes, config.READ)
+	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes, config.READ)
 	if err != nil {
 		log.Println("Error obtaining nodes for key:", err)
 		return nil
@@ -95,7 +128,7 @@ func SendRequestToReplica(
 	var operation GRPCOperation
 	var requiredResponses int32
 	switch op {
-	case config.READ:
+	case config.READ: //TODO: timeout on required responses
 		operation = performRead
 		requiredResponses = int32(config.R)
 	case config.WRITE:
@@ -124,11 +157,11 @@ func SendRequestToReplica(
 	}()
 
 	for _, node := range targetNodes {
-		if node.Port == currentMachinePort {
+		if node.Address == currAddr {
 			continue
 		}
 		go func(n *pb.Node) {
-			if err := grpcCall(ctx, n, key, operation, defaultTimeout, result); err != nil {
+			if err := grpcCall(ctx, n, kv, operation, defaultTimeout, result); err != nil {
 				log.Println("Error in gRPC call:", err)
 			}
 		}(node)

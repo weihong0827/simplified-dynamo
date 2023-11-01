@@ -3,13 +3,10 @@ package main
 import (
 	"context"
 	"dynamoSimplified/config"
+	hash "dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
-	utils "dynamoSimplified/utils"
 	"flag"
-	"fmt"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"math/rand"
@@ -32,12 +29,12 @@ type Server struct {
 
 func NewServer(addr string) *Server {
 	return &Server{
-		id:    utils.GenHash(addr),
+		id:    hash.GenHash(addr),
 		addr:  addr,
 		mu:    &sync.RWMutex{},
 		store: make(map[string]pb.KeyValue),
 		membershipList: &pb.MembershipList{Nodes: []*pb.Node{
-			&pb.Node{Id: utils.GenHash(addr), Address: addr},
+			&pb.Node{Id: hash.GenHash(addr), Address: addr},
 		}, Timestamp: timestamppb.Now()},
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
@@ -47,28 +44,50 @@ func NewServer(addr string) *Server {
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
+	// this should be the ID of the current node
+	nodeID := s.id
 	key := in.KeyValue.Key
 
-	// Update vector clock
-	currentClock, found := s.vectorClocks[key]
-	if !found {
-		currentClock = pb.VectorClock{Timestamps: make(map[string]*pb.ClockStruct)}
-	}
-	nodeID := "nodeID" // this should be the ID of the current node
-	currentClock.Timestamps[nodeID] = time.Now().UnixNano()
 	// Use appropriate time for your use case
-	s.vectorClocks[key] = currentClock
+	// s.vectorClocks[key] = currentClock
 
 	// Store the new value
-	in.KeyValue.VectorClock = &currentClock
-	s.store[key] = *in.KeyValue
 
 	// Replicate write to W-1 other nodes (assuming the first write is the current node)
 
 	// Make a gRPC call to Write method of the other node
 	// ...
+	if !in.IsReplica {
+		var currentClock *pb.VectorClock
+		// Update vector clock
+		kv, found := s.store[key]
+		if !found {
+			currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
+			currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+		} else {
+			currentClock = kv.VectorClock
+			currentClock.Timestamps[nodeID].ClokcVal += 1
+			currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
+		}
+		in.KeyValue.VectorClock = currentClock
+		s.store[key] = *in.KeyValue
+		value, _ := s.store[key]
+		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.addr) //replica result is an array
+		result := append(replicaResult, &value)
+		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
+		//TODO: implement timeout when waited to long to get write success. or detect write failure
+	} else {
+		value, _ := s.store[key]
+		return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
+	}
 
+	return &pb.WriteResponse{Success: true}, nil
+}
+
+func (s *Server) HintedHandoffWriteRequest(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.WriteResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// TODO
 	return &pb.WriteResponse{Success: true}, nil
 }
 
@@ -79,28 +98,21 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	log.Printf("read request received for %v", in.Key)
 
 	key := in.Key
+	kv := pb.KeyValue{Key: key}
+
 	value, ok := s.store[key]
 	if !ok {
 		return &pb.ReadResponse{Success: false, Message: "Key not found"}, nil
 	}
-	if in.IsReplica {
-		replicaResult := SendRequestToReplica(key, s.membershipList.Nodes, config.READ, s.addr)
-		result := append(replicaResult, &value)
+	if !in.IsReplica {
+		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.READ, s.addr)
+		result := append(replicaResult, &value) //contains the addresses of all stores
+		//compare vector clocks
+		result = CompareVectorClocks(result)
 		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
 	}
 
-	return &pb.ReadResponse{KeyValue: *pb.KeyValue{&value}, Success: true}, nil
-}
-
-// Gossip implements dynamo.KeyValueStoreServer
-func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAck, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Update nodes based on the received gossip message
-	// ...
-
-	return &pb.GossipAck{Success: true}, nil
+	return &pb.ReadResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 }
 
 // Join implements dynamo.NodeServServer
@@ -131,9 +143,9 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 	s.membershipList = in.MembershipList
 
 	// log membershipList
-	fmt.Printf("membershipList at node %v\n", s.addr)
+	log.Printf("membershipList at node %v\n", s.addr)
 	for _, node := range s.membershipList.Nodes {
-		fmt.Println(node.Address)
+		log.Println(node.Address)
 	}
 
 	return &pb.GossipAck{Success: true}, nil
@@ -194,10 +206,6 @@ func main() {
 	grpcServer := grpc.NewServer()
 	pb.RegisterNodeServServer(grpcServer, server)
 
-	// Register the health check server with the gRPC server
-	healthcheck := health.NewServer()
-	healthgrpc.RegisterHealthServer(grpcServer, healthcheck)
-
 	log.Printf("Server listening at %v", lis.Addr())
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
@@ -218,7 +226,7 @@ func main() {
 		client := pb.NewNodeServClient(conn)
 
 		// join the seed node
-		resp, err := client.Join(context.Background(), &pb.Node{Id: utils.GenHash(*addr), Address: *addr})
+		resp, err := client.Join(context.Background(), &pb.Node{Id: hash.GenHash(*addr), Address: *addr})
 		if err != nil {
 			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, seed_addr, seed_addr)
 		} else {

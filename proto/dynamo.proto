@@ -37,7 +37,7 @@ message ClockStruct {
 }
 
 message VectorClock {
-  map<string, ClockStruct> timestamps = 1; // Map to hold the vector clock data
+  map<uint32, ClockStruct> timestamps = 1; // Map to hold the vector clock data
 }
 
 message BulkWriteRequest {
@@ -55,8 +55,9 @@ message WriteRequest {
 }
 
 message WriteResponse {
-  bool success = 1;
-  string message = 2;
+  repeated KeyValue keyValue = 1;
+  bool success = 2;
+  string message = 3;
 }
 
 message ReadRequest {
@@ -66,7 +67,7 @@ message ReadRequest {
 }
 
 message ReadResponse {
-  KeyValue keyValue = 1;
+  repeated KeyValue keyValue = 1;
   bool success = 2;
   string message = 3;
 }
