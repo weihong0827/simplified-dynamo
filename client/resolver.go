@@ -16,7 +16,11 @@ func NewExampleResolverBuilder(addrStore map[string][]string) *exampleResolverBu
 	return &exampleResolverBuilder{addrStore: addrStore}
 }
 
-func (e *exampleResolverBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {
+func (e *exampleResolverBuilder) Build(
+	target resolver.Target,
+	cc resolver.ClientConn,
+	opts resolver.BuildOptions,
+) (resolver.Resolver, error) {
 	r := &exampleResolver{
 		target:     target,
 		cc:         cc,
@@ -44,7 +48,8 @@ func (r *exampleResolver) start() {
 }
 
 func (*exampleResolver) ResolveNow(o resolver.ResolveNowOptions) {}
-func (*exampleResolver) Close()                                  {}
+
+func (*exampleResolver) Close() {}
 
 func init() {
 	resolver.Register(&exampleResolverBuilder{})

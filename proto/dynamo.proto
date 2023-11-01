@@ -16,10 +16,11 @@ service KeyValueStore {
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
 
+  rpc Delete(ReadRequest) returns (ReadResponse) {}
 }
 
 service NodeServ {
-  rpc Join(Node) returns (MembershipList) {}
+  rpc Join(Node) returns (JoinResponse) {}
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 }
 
@@ -58,6 +59,10 @@ message WriteResponse {
   repeated KeyValue keyValue = 1;
   bool success = 2;
   string message = 3;
+}
+message JoinResponse{
+  repeated KeyValue data= 1;
+  MembershipList membershipList= 2;
 }
 
 message ReadRequest {

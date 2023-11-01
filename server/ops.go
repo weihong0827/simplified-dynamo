@@ -76,14 +76,6 @@ func performHintedHandoffWrite(
 	return nil
 }
 
-func createGRPCConnection(address string) (*grpc.ClientConn, error) {
-	conn, err := grpc.Dial(address, grpc.WithInsecure())
-	if err != nil {
-		return nil, fmt.Errorf(connectionError, err)
-	}
-	return conn, nil
-}
-
 // grpcCall performs the given gRPC operation on the specified node.
 func grpcCall(
 	ctx context.Context,
@@ -96,7 +88,7 @@ func grpcCall(
 	callCtx, callCancel := context.WithTimeout(ctx, timeout)
 	defer callCancel()
 
-	conn, err := createGRPCConnection(node.Address)
+	conn, err := CreateGRPCConnection(node.Address)
 	if err != nil {
 		return err
 		//TODO: update membership list.
