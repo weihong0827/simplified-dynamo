@@ -29,11 +29,11 @@ var mutex = &sync.Mutex{}
 func main() {
 	// Initialize the list of backend servers
 	servers = []Server{
-		{&pb.Node{Id: utils.GenHash("localhost:50051"), Address: "localhost:50051"}, nil},
-		{&pb.Node{Id: utils.GenHash("localhost:50052"), Address: "localhost:50052"}, nil},
-		{&pb.Node{Id: utils.GenHash("localhost:50053"), Address: "localhost:50053"}, nil},
-		{&pb.Node{Id: utils.GenHash("localhost:50054"), Address: "localhost:50054"}, nil},
-		{&pb.Node{Id: utils.GenHash("localhost:50055"), Address: "localhost:50055"}, nil},
+		{&pb.Node{Id: utils.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
+		{&pb.Node{Id: utils.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
+		{&pb.Node{Id: utils.GenHash("127.0.0.1:50053"), Address: "127.0.0.1:50053"}, nil},
+		{&pb.Node{Id: utils.GenHash("127.0.0.1:50054"), Address: "127.0.0.1:50054"}, nil},
+		{&pb.Node{Id: utils.GenHash("127.0.0.1:50055"), Address: "127.0.0.1:50055"}, nil},
 	}
 
 	// Establish gRPC connections to all servers
