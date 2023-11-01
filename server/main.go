@@ -40,7 +40,6 @@ func NewServer(addr string) *Server {
 	}
 }
 
-/*
 // Write implements dynamo.KeyValueStoreServer
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()

@@ -1,4 +1,4 @@
-package webclient
+package main
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	utils "dynamoSimplified/utils"
+	hash "dynamoSimplified/hash"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -29,11 +29,11 @@ var mutex = &sync.Mutex{}
 func main() {
 	// Initialize the list of backend servers
 	servers = []Server{
-		{&pb.Node{Id: utils.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
-		{&pb.Node{Id: utils.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
-		{&pb.Node{Id: utils.GenHash("127.0.0.1:50053"), Address: "127.0.0.1:50053"}, nil},
-		{&pb.Node{Id: utils.GenHash("127.0.0.1:50054"), Address: "127.0.0.1:50054"}, nil},
-		{&pb.Node{Id: utils.GenHash("127.0.0.1:50055"), Address: "127.0.0.1:50055"}, nil},
+		{&pb.Node{Id: hash.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
+		{&pb.Node{Id: hash.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
+		{&pb.Node{Id: hash.GenHash("127.0.0.1:50053"), Address: "127.0.0.1:50053"}, nil},
+		{&pb.Node{Id: hash.GenHash("127.0.0.1:50054"), Address: "127.0.0.1:50054"}, nil},
+		{&pb.Node{Id: hash.GenHash("127.0.0.1:50055"), Address: "127.0.0.1:50055"}, nil},
 	}
 
 	// Establish gRPC connections to all servers
@@ -76,8 +76,8 @@ func main() {
 		defer mutex.Unlock()
 
 		port := c.Query("port")
-		hash := utils.GenHash("127.0.0.1:" + port)
-		nodes, err := utils.GetNodesFromKey(hash, getServersAddresses(servers), config.READ)
+		hashVal := hash.GenHash("127.0.0.1:" + port)
+		nodes, err := hash.GetNodesFromKey(hashVal, getServersAddresses(servers), config.READ)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
