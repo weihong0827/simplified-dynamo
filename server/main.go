@@ -6,15 +6,13 @@ import (
 	hash "dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
 	"flag"
-	"fmt"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // server is used to implement dynamo.KeyValueStoreServer.
@@ -145,9 +143,9 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 	s.membershipList = in.MembershipList
 
 	// log membershipList
-	fmt.Printf("membershipList at node %v\n", s.addr)
+	log.Printf("membershipList at node %v\n", s.addr)
 	for _, node := range s.membershipList.Nodes {
-		fmt.Println(node.Address)
+		log.Println(node.Address)
 	}
 
 	return &pb.GossipAck{Success: true}, nil
