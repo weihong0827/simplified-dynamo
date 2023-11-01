@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"context"
 	"dynamoSimplified/config"
@@ -181,3 +182,4 @@ collect:
 
 	return collectedResults
 }
+*/

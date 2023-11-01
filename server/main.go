@@ -40,6 +40,7 @@ func NewServer(addr string) *Server {
 	}
 }
 
+/*
 // Write implements dynamo.KeyValueStoreServer
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
@@ -223,6 +224,10 @@ func (s *Server) SendGossip(ctx context.Context) {
 
 		time.Sleep(time.Second * 5)
 	}
+}
+
+func (s *Server) Ping(ctx context.Context, in *pb.PingRequest) (*pb.PingResponse, error) {
+	return &pb.PingResponse{}, nil
 }
 
 var (

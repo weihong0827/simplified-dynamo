@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
+	KeyValueStore_Ping_FullMethodName          = "/dynamo.KeyValueStore/Ping"
 	KeyValueStore_Write_FullMethodName         = "/dynamo.KeyValueStore/Write"
 	KeyValueStore_Read_FullMethodName          = "/dynamo.KeyValueStore/Read"
 	KeyValueStore_Join_FullMethodName          = "/dynamo.KeyValueStore/Join"
@@ -31,6 +32,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type KeyValueStoreClient interface {
+	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
 	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error)
@@ -47,6 +49,15 @@ type keyValueStoreClient struct {
 
 func NewKeyValueStoreClient(cc grpc.ClientConnInterface) KeyValueStoreClient {
 	return &keyValueStoreClient{cc}
+}
+
+func (c *keyValueStoreClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
+	out := new(PingResponse)
+	err := c.cc.Invoke(ctx, KeyValueStore_Ping_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *keyValueStoreClient) Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error) {
@@ -107,6 +118,7 @@ func (c *keyValueStoreClient) SendReplica(ctx context.Context, in *BulkWriteRequ
 // All implementations must embed UnimplementedKeyValueStoreServer
 // for forward compatibility
 type KeyValueStoreServer interface {
+	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	Write(context.Context, *WriteRequest) (*WriteResponse, error)
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)
 	Join(context.Context, *Node) (*MembershipList, error)
@@ -122,6 +134,9 @@ type KeyValueStoreServer interface {
 type UnimplementedKeyValueStoreServer struct {
 }
 
+func (UnimplementedKeyValueStoreServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
+}
 func (UnimplementedKeyValueStoreServer) Write(context.Context, *WriteRequest) (*WriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Write not implemented")
 }
@@ -151,6 +166,24 @@ type UnsafeKeyValueStoreServer interface {
 
 func RegisterKeyValueStoreServer(s grpc.ServiceRegistrar, srv KeyValueStoreServer) {
 	s.RegisterService(&KeyValueStore_ServiceDesc, srv)
+}
+
+func _KeyValueStore_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KeyValueStore_Ping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).Ping(ctx, req.(*PingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _KeyValueStore_Write_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -268,6 +301,10 @@ var KeyValueStore_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "dynamo.KeyValueStore",
 	HandlerType: (*KeyValueStoreServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Ping",
+			Handler:    _KeyValueStore_Ping_Handler,
+		},
 		{
 			MethodName: "Write",
 			Handler:    _KeyValueStore_Write_Handler,
