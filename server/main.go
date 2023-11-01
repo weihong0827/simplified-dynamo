@@ -45,39 +45,46 @@ func (s *server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	nodeID := hash.GenHash(strconv.FormatUint(uint64(s.port), 10))
 	key := in.KeyValue.Key
 
-	var currentClock *pb.VectorClock
-	// Update vector clock
-	kv, found := s.store[key]
-	if !found {
-		currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
-		currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
-		in.KeyValue.VectorClock = currentClock
-	} else {
-		currentClock = kv.VectorClock
-		currentClock.Timestamps[nodeID].ClokcVal += 1
-		currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
-		in.KeyValue.VectorClock = currentClock
-	}
-
 	// Use appropriate time for your use case
 	// s.vectorClocks[key] = currentClock
-	in.KeyValue.VectorClock = currentClock
-	// Store the new value
 
-	s.store[key] = *in.KeyValue
-	value, _ := s.store[key]
+	// Store the new value
 
 	// Replicate write to W-1 other nodes (assuming the first write is the current node)
 
 	// Make a gRPC call to Write method of the other node
 	// ...
 	if !in.IsReplica {
+		var currentClock *pb.VectorClock
+		// Update vector clock
+		kv, found := s.store[key]
+		if !found {
+			currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
+			currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+		} else {
+			currentClock = kv.VectorClock
+			currentClock.Timestamps[nodeID].ClokcVal += 1
+			currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
+		}
+		in.KeyValue.VectorClock = currentClock
+		s.store[key] = *in.KeyValue
+		value, _ := s.store[key]
 		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.port) //replica result is an array
 		result := append(replicaResult, &value)
 		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
 		//TODO: implement timeout when waited to long to get write success. or detect write failure
+	} else {
+		value, _ := s.store[key]
+		return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 	}
 
+	return &pb.WriteResponse{Success: true}, nil
+}
+
+func (s *server) HintedHandoffWriteRequest(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.WriteResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// TODO
 	return &pb.WriteResponse{Success: true}, nil
 }
 

@@ -66,6 +66,15 @@ func performWrite(
 	}
 	return nil
 }
+func performHintedHandoffWrite(
+	ctx context.Context,
+	client pb.KeyValueStoreClient,
+	kv pb.KeyValue,
+	result chan<- *pb.KeyValue,
+) error {
+	//TODO: call the write and handle error and return
+	return nil
+}
 
 func createGRPCConnection(address string) (*grpc.ClientConn, error) {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
@@ -90,7 +99,12 @@ func grpcCall(
 	conn, err := createGRPCConnection(node.Address)
 	if err != nil {
 		return err
+		//TODO: update membership list.
+		//check op its a write req or read req
+		// if write
 		//TODO need to check what the error is and if needed perform hinted handoff
+		// create connection
+		// set op to performHintedHandoff
 	}
 	defer conn.Close()
 
@@ -114,7 +128,7 @@ func SendRequestToReplica(
 	var operation GRPCOperation
 	var requiredResponses int32
 	switch op {
-	case config.READ:
+	case config.READ: //TODO: timeout on required responses
 		operation = performRead
 		requiredResponses = int32(config.R)
 	case config.WRITE:
