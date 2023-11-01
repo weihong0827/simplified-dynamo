@@ -9,18 +9,13 @@ service KeyValueStore {
   rpc Write(WriteRequest) returns (WriteResponse) {}
   rpc Read(ReadRequest) returns (ReadResponse) {}
 
+  rpc Join(Node) returns (MembershipList) {}
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 
   // temporarily send the replica to other machines to store 
   rpc HintedHandoff(HintedHandoffWriteRequest) returns (Empty) {}
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
-
-}
-
-service NodeServ {
-  rpc Join(Node) returns (MembershipList) {}
-  rpc Gossip(GossipMessage) returns (GossipAck) {}
 }
 
 message Empty {}
@@ -84,10 +79,11 @@ message GossipAck {
 
 message MembershipList {
   repeated Node nodes = 1;
-  google.protobuf.Timestamp timestamp = 2;
 }
 
 message Node {
   uint32 id = 1;
   string address = 2;
+  bool isAlive = 3;
+  google.protobuf.Timestamp timestamp = 4;
 }
