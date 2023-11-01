@@ -103,7 +103,7 @@ func SendRequestToReplica(
 	kv pb.KeyValue,
 	nodes hash.NodeSlice,
 	op config.Operation,
-	currentMachinePort uint32,
+	currAddr string,
 ) []*pb.KeyValue {
 	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes, config.READ)
 	if err != nil {
@@ -143,7 +143,7 @@ func SendRequestToReplica(
 	}()
 
 	for _, node := range targetNodes {
-		if node.Port == currentMachinePort {
+		if node.Address == currAddr {
 			continue
 		}
 		go func(n *pb.Node) {
