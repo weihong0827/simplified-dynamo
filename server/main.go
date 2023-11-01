@@ -174,13 +174,13 @@ func ReconcileMembershipList(list1 *pb.MembershipList, list2 *pb.MembershipList)
 // create a method to periodically send gossip message to other nodes
 func (s *Server) SendGossip(ctx context.Context) {
 	for {
-		s.mu.RLock()
+		s.mu.Lock()
 
 		// randomly pick one other node from membership list
 		// send gossip to that node
 		targetNode := s.membershipList.Nodes[rand.Intn(len(s.membershipList.Nodes))]
 		if targetNode.Address == s.addr {
-			s.mu.RUnlock()
+			s.mu.Unlock()
 			time.Sleep(time.Second * 5)
 			continue
 		}
@@ -188,16 +188,38 @@ func (s *Server) SendGossip(ctx context.Context) {
 		// create grpc client
 		conn, err := grpc.Dial(targetNode.Address, grpc.WithInsecure())
 		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
+			log.Printf("fail to dial: %v", err)
+			// update membership list to change isAlive to false
+			for _, node := range s.membershipList.Nodes {
+				if node.Address == targetNode.Address {
+					node.IsAlive = false
+					node.Timestamp = timestamppb.Now()
+					s.mu.Unlock()
+					break
+				}
+			}
 		}
 		defer conn.Close()
 
 		client := pb.NewKeyValueStoreClient(conn)
 
 		// send gossip message
-		client.Gossip(ctx, &pb.GossipMessage{MembershipList: s.membershipList})
+		resp, err := client.Gossip(ctx, &pb.GossipMessage{MembershipList: s.membershipList})
+		if err != nil {
+			log.Printf("fail to send gossip: %v", err)
+			// update membership list to change isAlive to false
+			for _, node := range s.membershipList.Nodes {
+				if node.Address == targetNode.Address {
+					node.IsAlive = false
+					node.Timestamp = timestamppb.Now()
+					s.mu.Unlock()
+					break
+				}
+			}
+			continue
+		}
 
-		s.mu.RUnlock()
+		s.mu.Unlock()
 
 		time.Sleep(time.Second * 5)
 	}
