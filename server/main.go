@@ -74,7 +74,7 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 		in.KeyValue.VectorClock = currentClock
 		s.store[key] = *in.KeyValue
 		value, _ := s.store[key]
-		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.port) //replica result is an array
+		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.addr) //replica result is an array
 		result := append(replicaResult, &value)
 		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
 		//TODO: implement timeout when waited to long to get write success. or detect write failure
@@ -86,7 +86,7 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	return &pb.WriteResponse{Success: true}, nil
 }
 
-func (s *server) HintedHandoffWriteRequest(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.WriteResponse, error) {
+func (s *Server) HintedHandoffWriteRequest(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// TODO
