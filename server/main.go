@@ -18,7 +18,7 @@ import (
 // server is used to implement dynamo.KeyValueStoreServer.
 // TODO: store data in memory first
 type Server struct {
-	pb.UnimplementedNodeServServer
+	pb.UnimplementedKeyValueStoreServer
 	id             uint32
 	addr           string
 	mu             *sync.RWMutex // protects the following
@@ -34,12 +34,13 @@ func NewServer(addr string) *Server {
 		mu:    &sync.RWMutex{},
 		store: make(map[string]pb.KeyValue),
 		membershipList: &pb.MembershipList{Nodes: []*pb.Node{
-			&pb.Node{Id: hash.GenHash(addr), Address: addr},
-		}, Timestamp: timestamppb.Now()},
+			&pb.Node{Id: hash.GenHash(addr), Address: addr, Timestamp: timestamppb.Now(), IsAlive: true},
+		}},
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
 }
 
+/*
 // Write implements dynamo.KeyValueStoreServer
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
@@ -115,7 +116,7 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	return &pb.ReadResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 }
 
-// Join implements dynamo.NodeServServer
+// Join implements dynamo.KeyValueStoreServer
 func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -124,23 +125,18 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, err
 
 	// Update membership list
 	s.membershipList.Nodes = append(s.membershipList.Nodes, in)
-	s.membershipList.Timestamp = timestamppb.Now()
 
 	// Send membership list to joining node
-	return &pb.MembershipList{Nodes: s.membershipList.Nodes, Timestamp: s.membershipList.Timestamp}, nil
+	return &pb.MembershipList{Nodes: s.membershipList.Nodes}, nil
 }
 
-// Gossip implements dynamo.NodeServServer
+// Gossip implements dynamo.KeyValueStoreServer
 func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAck, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if in.MembershipList.Timestamp.Seconds < s.membershipList.Timestamp.Seconds {
-		return &pb.GossipAck{Success: false}, nil
-	}
-
 	// Update nodes based on the received gossip message
-	s.membershipList = in.MembershipList
+	s.membershipList = ReconcileMembershipList(s.membershipList, in.MembershipList)
 
 	// log membershipList
 	log.Printf("membershipList at node %v\n", s.addr)
@@ -151,16 +147,41 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 	return &pb.GossipAck{Success: true}, nil
 }
 
+func ReconcileMembershipList(list1 *pb.MembershipList, list2 *pb.MembershipList) *pb.MembershipList {
+	var mp = make(map[uint32]*pb.Node)
+
+	for _, node := range list1.Nodes {
+		mp[node.Id] = node
+	}
+
+	for _, node := range list2.Nodes {
+		if _, ok := mp[node.Id]; !ok {
+			mp[node.Id] = node
+		} else {
+			if mp[node.Id].Timestamp.Seconds < node.Timestamp.Seconds {
+				mp[node.Id] = node
+			}
+		}
+	}
+
+	var newList = pb.MembershipList{Nodes: []*pb.Node{}}
+	for _, node := range mp {
+		newList.Nodes = append(newList.Nodes, node)
+	}
+
+	return &pb.MembershipList{Nodes: newList.Nodes}
+}
+
 // create a method to periodically send gossip message to other nodes
 func (s *Server) SendGossip(ctx context.Context) {
 	for {
-		s.mu.RLock()
+		s.mu.Lock()
 
 		// randomly pick one other node from membership list
 		// send gossip to that node
 		targetNode := s.membershipList.Nodes[rand.Intn(len(s.membershipList.Nodes))]
 		if targetNode.Address == s.addr {
-			s.mu.RUnlock()
+			s.mu.Unlock()
 			time.Sleep(time.Second * 5)
 			continue
 		}
@@ -168,19 +189,45 @@ func (s *Server) SendGossip(ctx context.Context) {
 		// create grpc client
 		conn, err := grpc.Dial(targetNode.Address, grpc.WithInsecure())
 		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
+			log.Printf("fail to dial: %v", err)
+			// update membership list to change isAlive to false
+			for _, node := range s.membershipList.Nodes {
+				if node.Address == targetNode.Address {
+					node.IsAlive = false
+					node.Timestamp = timestamppb.Now()
+					s.mu.Unlock()
+					break
+				}
+			}
 		}
 		defer conn.Close()
 
-		client := pb.NewNodeServClient(conn)
+		client := pb.NewKeyValueStoreClient(conn)
 
 		// send gossip message
-		client.Gossip(ctx, &pb.GossipMessage{MembershipList: s.membershipList})
+		resp, err := client.Gossip(ctx, &pb.GossipMessage{MembershipList: s.membershipList})
+		if err != nil {
+			log.Printf("fail to send gossip: %v", err)
+			// update membership list to change isAlive to false
+			for _, node := range s.membershipList.Nodes {
+				if node.Address == targetNode.Address {
+					node.IsAlive = false
+					node.Timestamp = timestamppb.Now()
+					s.mu.Unlock()
+					break
+				}
+			}
+			continue
+		}
 
-		s.mu.RUnlock()
+		s.mu.Unlock()
 
 		time.Sleep(time.Second * 5)
 	}
+}
+
+func (s *Server) Ping(ctx context.Context, in *pb.PingRequest) (*pb.PingResponse, error) {
+	return &pb.PingResponse{}, nil
 }
 
 var (
@@ -204,7 +251,7 @@ func main() {
 
 	// Register the server with the gRPC server
 	grpcServer := grpc.NewServer()
-	pb.RegisterNodeServServer(grpcServer, server)
+	pb.RegisterKeyValueStoreServer(grpcServer, server)
 
 	log.Printf("Server listening at %v", lis.Addr())
 	go func() {
@@ -223,10 +270,10 @@ func main() {
 		}
 		defer conn.Close()
 
-		client := pb.NewNodeServClient(conn)
+		client := pb.NewKeyValueStoreClient(conn)
 
 		// join the seed node
-		resp, err := client.Join(context.Background(), &pb.Node{Id: hash.GenHash(*addr), Address: *addr})
+		resp, err := client.Join(context.Background(), &pb.Node{Id: hash.GenHash(*addr), Address: *addr, Timestamp: timestamppb.Now(), IsAlive: true})
 		if err != nil {
 			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, seed_addr, seed_addr)
 		} else {
