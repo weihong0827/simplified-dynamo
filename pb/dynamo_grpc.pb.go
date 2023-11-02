@@ -18,16 +18,6 @@ import (
 // Requires gRPC-Go v1.32.0 or later.
 const _ = grpc.SupportPackageIsVersion7
 
-const (
-	KeyValueStore_Ping_FullMethodName          = "/dynamo.KeyValueStore/Ping"
-	KeyValueStore_Write_FullMethodName         = "/dynamo.KeyValueStore/Write"
-	KeyValueStore_Read_FullMethodName          = "/dynamo.KeyValueStore/Read"
-	KeyValueStore_Join_FullMethodName          = "/dynamo.KeyValueStore/Join"
-	KeyValueStore_Gossip_FullMethodName        = "/dynamo.KeyValueStore/Gossip"
-	KeyValueStore_HintedHandoff_FullMethodName = "/dynamo.KeyValueStore/HintedHandoff"
-	KeyValueStore_SendReplica_FullMethodName   = "/dynamo.KeyValueStore/SendReplica"
-)
-
 // KeyValueStoreClient is the client API for KeyValueStore service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
@@ -35,13 +25,15 @@ type KeyValueStoreClient interface {
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
-	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error)
+	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*JoinResponse, error)
 	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error)
 	// when the node back alive again, it will send the replica back to the node
 	SendReplica(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
-	Delete(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
+	Delete(ctx context.Context, in *ReplicaDeleteRequest, opts ...grpc.CallOption) (*Empty, error)
+	BulkWrite(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*Empty, error)
+	Transfer(ctx context.Context, in *ReplicaTransferRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type keyValueStoreClient struct {
@@ -54,7 +46,7 @@ func NewKeyValueStoreClient(cc grpc.ClientConnInterface) KeyValueStoreClient {
 
 func (c *keyValueStoreClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
 	out := new(PingResponse)
-	err := c.cc.Invoke(ctx, KeyValueStore_Ping_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/Ping", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -79,9 +71,9 @@ func (c *keyValueStoreClient) Read(ctx context.Context, in *ReadRequest, opts ..
 	return out, nil
 }
 
-func (c *keyValueStoreClient) Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error) {
-	out := new(MembershipList)
-	err := c.cc.Invoke(ctx, KeyValueStore_Join_FullMethodName, in, out, opts...)
+func (c *keyValueStoreClient) Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*JoinResponse, error) {
+	out := new(JoinResponse)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/Join", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -115,9 +107,27 @@ func (c *keyValueStoreClient) SendReplica(ctx context.Context, in *BulkWriteRequ
 	return out, nil
 }
 
-func (c *keyValueStoreClient) Delete(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error) {
-	out := new(ReadResponse)
+func (c *keyValueStoreClient) Delete(ctx context.Context, in *ReplicaDeleteRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/Delete", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *keyValueStoreClient) BulkWrite(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/BulkWrite", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *keyValueStoreClient) Transfer(ctx context.Context, in *ReplicaTransferRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/Transfer", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,13 +141,15 @@ type KeyValueStoreServer interface {
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	Write(context.Context, *WriteRequest) (*WriteResponse, error)
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)
-	Join(context.Context, *Node) (*MembershipList, error)
+	Join(context.Context, *Node) (*JoinResponse, error)
 	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error)
 	// when the node back alive again, it will send the replica back to the node
 	SendReplica(context.Context, *BulkWriteRequest) (*WriteResponse, error)
-	Delete(context.Context, *ReadRequest) (*ReadResponse, error)
+	Delete(context.Context, *ReplicaDeleteRequest) (*Empty, error)
+	BulkWrite(context.Context, *BulkWriteRequest) (*Empty, error)
+	Transfer(context.Context, *ReplicaTransferRequest) (*Empty, error)
 	mustEmbedUnimplementedKeyValueStoreServer()
 }
 
@@ -154,7 +166,7 @@ func (UnimplementedKeyValueStoreServer) Write(context.Context, *WriteRequest) (*
 func (UnimplementedKeyValueStoreServer) Read(context.Context, *ReadRequest) (*ReadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Read not implemented")
 }
-func (UnimplementedKeyValueStoreServer) Join(context.Context, *Node) (*MembershipList, error) {
+func (UnimplementedKeyValueStoreServer) Join(context.Context, *Node) (*JoinResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Join not implemented")
 }
 func (UnimplementedKeyValueStoreServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
@@ -166,8 +178,14 @@ func (UnimplementedKeyValueStoreServer) HintedHandoff(context.Context, *HintedHa
 func (UnimplementedKeyValueStoreServer) SendReplica(context.Context, *BulkWriteRequest) (*WriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendReplica not implemented")
 }
-func (UnimplementedKeyValueStoreServer) Delete(context.Context, *ReadRequest) (*ReadResponse, error) {
+func (UnimplementedKeyValueStoreServer) Delete(context.Context, *ReplicaDeleteRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
+}
+func (UnimplementedKeyValueStoreServer) BulkWrite(context.Context, *BulkWriteRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BulkWrite not implemented")
+}
+func (UnimplementedKeyValueStoreServer) Transfer(context.Context, *ReplicaTransferRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Transfer not implemented")
 }
 func (UnimplementedKeyValueStoreServer) mustEmbedUnimplementedKeyValueStoreServer() {}
 
@@ -192,7 +210,7 @@ func _KeyValueStore_Ping_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: KeyValueStore_Ping_FullMethodName,
+		FullMethod: "/dynamo.KeyValueStore/Ping",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(KeyValueStoreServer).Ping(ctx, req.(*PingRequest))
@@ -246,7 +264,7 @@ func _KeyValueStore_Join_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: KeyValueStore_Join_FullMethodName,
+		FullMethod: "/dynamo.KeyValueStore/Join",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(KeyValueStoreServer).Join(ctx, req.(*Node))
@@ -309,7 +327,7 @@ func _KeyValueStore_SendReplica_Handler(srv interface{}, ctx context.Context, de
 }
 
 func _KeyValueStore_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReadRequest)
+	in := new(ReplicaDeleteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -321,7 +339,43 @@ func _KeyValueStore_Delete_Handler(srv interface{}, ctx context.Context, dec fun
 		FullMethod: "/dynamo.KeyValueStore/Delete",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KeyValueStoreServer).Delete(ctx, req.(*ReadRequest))
+		return srv.(KeyValueStoreServer).Delete(ctx, req.(*ReplicaDeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KeyValueStore_BulkWrite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BulkWriteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).BulkWrite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/BulkWrite",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).BulkWrite(ctx, req.(*BulkWriteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KeyValueStore_Transfer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReplicaTransferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).Transfer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/Transfer",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).Transfer(ctx, req.(*ReplicaTransferRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -365,127 +419,13 @@ var KeyValueStore_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Delete",
 			Handler:    _KeyValueStore_Delete_Handler,
 		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "dynamo.proto",
-}
-
-// NodeServClient is the client API for NodeServ service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type NodeServClient interface {
-	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*JoinResponse, error)
-	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
-}
-
-type nodeServClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewNodeServClient(cc grpc.ClientConnInterface) NodeServClient {
-	return &nodeServClient{cc}
-}
-
-func (c *nodeServClient) Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*JoinResponse, error) {
-	out := new(JoinResponse)
-	err := c.cc.Invoke(ctx, "/dynamo.NodeServ/Join", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeServClient) Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error) {
-	out := new(GossipAck)
-	err := c.cc.Invoke(ctx, "/dynamo.NodeServ/Gossip", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// NodeServServer is the server API for NodeServ service.
-// All implementations must embed UnimplementedNodeServServer
-// for forward compatibility
-type NodeServServer interface {
-	Join(context.Context, *Node) (*JoinResponse, error)
-	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
-	mustEmbedUnimplementedNodeServServer()
-}
-
-// UnimplementedNodeServServer must be embedded to have forward compatible implementations.
-type UnimplementedNodeServServer struct {
-}
-
-func (UnimplementedNodeServServer) Join(context.Context, *Node) (*JoinResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Join not implemented")
-}
-func (UnimplementedNodeServServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Gossip not implemented")
-}
-func (UnimplementedNodeServServer) mustEmbedUnimplementedNodeServServer() {}
-
-// UnsafeNodeServServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to NodeServServer will
-// result in compilation errors.
-type UnsafeNodeServServer interface {
-	mustEmbedUnimplementedNodeServServer()
-}
-
-func RegisterNodeServServer(s grpc.ServiceRegistrar, srv NodeServServer) {
-	s.RegisterService(&NodeServ_ServiceDesc, srv)
-}
-
-func _NodeServ_Join_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Node)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeServServer).Join(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/dynamo.NodeServ/Join",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServServer).Join(ctx, req.(*Node))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeServ_Gossip_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GossipMessage)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeServServer).Gossip(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/dynamo.NodeServ/Gossip",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServServer).Gossip(ctx, req.(*GossipMessage))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-// NodeServ_ServiceDesc is the grpc.ServiceDesc for NodeServ service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var NodeServ_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "dynamo.NodeServ",
-	HandlerType: (*NodeServServer)(nil),
-	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Join",
-			Handler:    _NodeServ_Join_Handler,
+			MethodName: "BulkWrite",
+			Handler:    _KeyValueStore_BulkWrite_Handler,
 		},
 		{
-			MethodName: "Gossip",
-			Handler:    _NodeServ_Gossip_Handler,
+			MethodName: "Transfer",
+			Handler:    _KeyValueStore_Transfer_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

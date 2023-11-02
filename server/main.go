@@ -49,7 +49,12 @@ func NewServer(addr string) *Server {
 		mu:    &sync.RWMutex{},
 		store: make(map[uint32]pb.KeyValue),
 		membershipList: &pb.MembershipList{Nodes: []*pb.Node{
-			&pb.Node{Id: hash.GenHash(addr), Address: addr, Timestamp: timestamppb.Now(), IsAlive: true},
+			&pb.Node{
+				Id:        hash.GenHash(addr),
+				Address:   addr,
+				Timestamp: timestamppb.Now(),
+				IsAlive:   true,
+			},
 		}},
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
@@ -68,6 +73,47 @@ func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRes
 	forwardNode, _ := s.getFastestRespondingServer(targetNodes)
 	coordNode := pb.NewKeyValueStoreClient(forwardNode.Conn)
 	return coordNode.Write(ctx, in)
+}
+
+func (s *Server) BulkWrite(ctx context.Context, in *pb.BulkWriteRequest) (*pb.Empty, error) {
+	for _, kv := range in.KeyValue {
+		idx := hash.GenHash(kv.Key)
+		s.store[idx] = *kv
+	}
+	return &pb.Empty{}, nil
+}
+
+func (s *Server) InitiateKeyRangeChange(
+	newNode *pb.Node,
+) {
+	// Get n nodes
+	// We are gettinging 1 node before the coordinatorNode
+	// and n nodes after the coordinatorNode including the coordinatorNode
+	var offsets []int
+	offsets = append(offsets, -1)
+	for i := 0; i < config.N; i++ {
+		offsets = append(offsets, i)
+	}
+
+	nodes, err := hash.GetNodeFromKeyWithOffSet(offsets, s.id, s.membershipList.Nodes)
+	if err != nil {
+		log.Println("Error When assigning key range change:", err)
+		return
+	}
+	//modify coordinatorNode
+	Transfer(s.store, nodes[0].Id, nodes[config.N-1].Id, newNode)
+	s.Delete(context.Background(), &pb.ReplicaDeleteRequest{
+		Start: nodes[0].Id,
+		End:   nodes[config.N-1].Id,
+	})
+	// Delete from other nodes
+	for i := 2; i < config.N; i++ {
+		node := nodes[i]
+		startIdx := i - config.N + 1
+		endIdx := i + 1
+		DeleteReplicaFromTarget(node, nodes[startIdx].Id, nodes[endIdx].Id)
+	}
+
 }
 
 // Write implements dynamo.KeyValueStoreServer
@@ -101,7 +147,13 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 		in.KeyValue.VectorClock = currentClock
 		s.store[hash.GenHash(key)] = *in.KeyValue
 		value, _ := s.store[hash.GenHash(key)]
-		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.addr, true) //how to detect when write fails?
+		replicaResult := SendRequestToReplica(
+			kv,
+			s.membershipList.Nodes,
+			config.WRITE,
+			s.addr,
+			true,
+		) //how to detect when write fails?
 		result := append(replicaResult, &value)
 		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
 		//TODO: implement timeout when waited to long to get write success. or detect write failure
@@ -120,15 +172,17 @@ func (s *Server) HintedHandoffWriteRequest(
 	// TODO
 	return &pb.WriteResponse{Success: true}, nil
 }
-func (s *Server) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse, error) {
+func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.Empty, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.store[in.Key]; ok {
-		delete(s.store, in.Key)
-		return &pb.ReadResponse{Success: true}, nil
-	}
-	return &pb.ReadResponse{Success: false}, nil
+	//TODO: Compare and update the membershiplist
 
+	for key, _ := range s.store {
+		if key >= in.Start && key <= in.End {
+			delete(s.store, key)
+		}
+	}
+	return &pb.Empty{}, nil
 }
 
 // Read implements dynamo.KeyValueStoreServer
@@ -170,13 +224,13 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error
 	s.membershipList.Nodes = append(s.membershipList.Nodes, in)
 
 	// update key range
+	s.InitiateKeyRangeChange(in)
 
 	// Send membership list to joining node
 	// TODO: After Andre update the membershipList this should be updated
 	return &pb.JoinResponse{
 		MembershipList: &pb.MembershipList{
-			Nodes:     s.membershipList.Nodes,
-			Timestamp: s.membershipList.Timestamp,
+			Nodes: s.membershipList.Nodes,
 		},
 		Data: nil,
 	}, nil
@@ -201,7 +255,10 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 	return &pb.GossipAck{Success: true}, nil
 }
 
-func ReconcileMembershipList(list1 *pb.MembershipList, list2 *pb.MembershipList) *pb.MembershipList {
+func ReconcileMembershipList(
+	list1 *pb.MembershipList,
+	list2 *pb.MembershipList,
+) *pb.MembershipList {
 	var mp = make(map[uint32]*pb.Node)
 
 	for _, node := range list1.Nodes {
@@ -300,7 +357,7 @@ func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection
 	// Ping all servers concurrently
 	for _, server := range servers {
 		go func(pNode *pb.Node) {
-			conn, err1 := createGRPCConnection(pNode.Address)
+			conn, err1 := CreateGRPCConnection(pNode.Address)
 			if err1 != nil {
 				s.updateMembershipList(true, pNode)
 			}
@@ -418,7 +475,7 @@ func main() {
 		}
 
 		server.mu.Lock()
-		server.membershipList = resp
+		server.membershipList = resp.MembershipList
 		server.mu.Unlock()
 	}
 
