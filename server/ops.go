@@ -66,15 +66,6 @@ func performWrite(
 	}
 	return nil
 }
-func performHintedHandoffWrite(
-	ctx context.Context,
-	client pb.KeyValueStoreClient,
-	kv pb.KeyValue,
-	result chan<- *pb.KeyValue,
-) error {
-	//TODO: call the write and handle error and return
-	return nil
-}
 
 func createGRPCConnection(address string) (*grpc.ClientConn, error) {
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
@@ -84,14 +75,56 @@ func createGRPCConnection(address string) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-// grpcCall performs the given gRPC operation on the specified node.
-func grpcCall(
+// Make a gRPC write call.
+func performOriNodeWrite(
 	ctx context.Context,
+	client pb.KeyValueStoreClient,
 	node *pb.Node,
 	kv pb.KeyValue,
-	op GRPCOperation,
+	succesfulSend chan<- *pb.Node,
+) error {
+
+	// Placeholder: Add your write call and its specifics here.
+	// Example: `w, err := client.Write(ctx, &pb.WriteRequest{Key: key, Value: value})`
+
+	// Here's a hypothetical write success message. Adjust it to match your actual API.
+	// result <- pb.KeyValue{Key: key, Value: "Write Successful!"}
+	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: &kv, IsReplica: true})
+	if err != nil {
+		return fmt.Errorf(replicaError, err)
+	}
+	if r.Success {
+		succesfulSend <- node
+	} else {
+		return fmt.Errorf(replicaError, "unexpected response format")
+	}
+	return nil
+}
+
+func performHintedHandoffWrite(
+	ctx context.Context,
+	client pb.KeyValueStoreClient,
+	node *pb.Node,
+	kv pb.KeyValue,
+) error {
+	//TODO: call the write and handle error and return
+	r, err := client.HintedHandoffWrite(ctx, &pb.HintedHandoffWriteRequest{KeyValue: &kv, Node: node})
+	if err != nil {
+		return fmt.Errorf(replicaError, err)
+	}
+	if r.Success {
+		// return fmt.Errorf("Hinted Handoff Write successful")
+		return nil
+	} else {
+		return fmt.Errorf(replicaError, "unexpected response format")
+	}
+}
+
+func hintedHandoffGrpcCall(ctx context.Context,
+	node *pb.Node,
+	kv pb.KeyValue,
 	timeout time.Duration,
-	result chan<- *pb.KeyValue,
+	succesfulSend chan<- *pb.Node,
 ) error {
 	callCtx, callCancel := context.WithTimeout(ctx, timeout)
 	defer callCancel()
@@ -99,17 +132,100 @@ func grpcCall(
 	conn, err := createGRPCConnection(node.Address)
 	if err != nil {
 		return err
-		//TODO: update membership list.
+	}
+	defer conn.Close()
+
+	client := pb.NewKeyValueStoreClient(conn)
+	return performOriNodeWrite(callCtx, client, node, kv, succesfulSend)
+}
+
+// grpcCall performs the given gRPC operation on the specified node.
+func grpcCall(
+	ctx context.Context,
+	node *pb.Node,
+	kv pb.KeyValue,
+	timeout time.Duration,
+	op config.Operation,
+	nodes hash.NodeSlice,
+	result chan<- *pb.KeyValue,
+) error {
+
+	var operation GRPCOperation
+	switch op {
+	case config.READ: //TODO: timeout on required responses
+		operation = performRead
+	case config.WRITE:
+		operation = performWrite
+	}
+
+	callCtx, callCancel := context.WithTimeout(ctx, timeout)
+	defer callCancel()
+
+	conn, err := createGRPCConnection(node.Address)
+	if err != nil {
+		// --> TODO: update membership list.
+
 		//check op its a write req or read req
 		// if write
 		//TODO need to check what the error is and if needed perform hinted handoff
 		// create connection
 		// set op to performHintedHandoff
+
+		switch op {
+		case config.READ:
+			return err
+		case config.WRITE:
+
+			successor := hash.GetSuccessiveNode(node.Id, nodes, op)
+			conn, err = createGRPCConnection(successor.Address)
+
+			defer conn.Close()
+
+			client := pb.NewKeyValueStoreClient(conn)
+			return performHintedHandoffWrite(callCtx, client, node, kv)
+		}
 	}
 	defer conn.Close()
 
 	client := pb.NewKeyValueStoreClient(conn)
-	return op(callCtx, client, kv, result)
+	return operation(callCtx, client, kv, result)
+}
+
+func SendToNode(
+	ctx context.Context,
+	nodes hash.NodeKvSlice,
+) []*pb.Node {
+
+	done := make(chan bool)
+	defer close(done)
+
+	succesfulSend := make(chan *pb.Node)
+	defer close(succesfulSend)
+
+	for _, node := range nodes {
+
+		// TODO close hinted handoff after all make grpc call
+		// defer done <- true
+		go func(n *pb.HintedHandoffWriteRequest) {
+			if err := hintedHandoffGrpcCall(ctx, n.Node, *n.KeyValue, defaultTimeout, succesfulSend); err != nil {
+				log.Println("Error in gRPC call:", err)
+			}
+
+		}(node)
+	}
+
+	var collectedSentNodes []*pb.Node
+collect:
+	for {
+		select {
+		case res := <-succesfulSend:
+			collectedSentNodes = append(collectedSentNodes, res)
+		case <-done:
+			break collect
+		}
+
+	}
+	return collectedSentNodes
 }
 
 // Sends requests to the appropriate replicas.
@@ -125,16 +241,7 @@ func SendRequestToReplica(
 		return nil
 	}
 
-	var operation GRPCOperation
 	var requiredResponses int32
-	switch op {
-	case config.READ: //TODO: timeout on required responses
-		operation = performRead
-		requiredResponses = int32(config.R)
-	case config.WRITE:
-		operation = performWrite
-		requiredResponses = int32(config.W)
-	}
 
 	result := make(chan *pb.KeyValue)
 	defer close(result)
@@ -161,7 +268,7 @@ func SendRequestToReplica(
 			continue
 		}
 		go func(n *pb.Node) {
-			if err := grpcCall(ctx, n, kv, operation, defaultTimeout, result); err != nil {
+			if err := grpcCall(ctx, n, kv, defaultTimeout, op, nodes, result); err != nil {
 				log.Println("Error in gRPC call:", err)
 			}
 		}(node)

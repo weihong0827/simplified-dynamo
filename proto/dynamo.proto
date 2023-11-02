@@ -49,6 +49,12 @@ message HintedHandoffWriteRequest {
   Node node = 2;
 }
 
+message HintedHandoffWriteResponse {
+  keyValue keyValue = 1;
+  Node node = 2;
+  bool success = 2;
+}
+
 message WriteRequest {
   KeyValue keyValue = 1;
   bool isReplica = 2;
@@ -87,7 +93,12 @@ message MembershipList {
   google.protobuf.Timestamp timestamp = 2;
 }
 
+message HintedHandoffMembershipList {
+  repeated HintedHandoffWriteRequest nodes = 1;
+}
+
 message Node {
   uint32 id = 1;
   string address = 2;
+  bool active = 1;
 }

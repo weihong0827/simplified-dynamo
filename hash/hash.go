@@ -3,12 +3,15 @@ package hash
 import (
 	"crypto/md5"
 	"dynamoSimplified/config"
+	"dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
 	"encoding/binary"
 	"sort"
 )
 
 type NodeSlice []*pb.Node
+
+type NodeKvSlice []*pb.HintedHandoffWriteRequest
 
 func (a NodeSlice) Len() int { return len(a) }
 
@@ -26,13 +29,7 @@ func GetNodesFromKey(key uint32, nodes NodeSlice, op config.Operation) ([]*pb.No
 
 	var n int
 	var result []*pb.Node
-
-	switch op {
-	case config.READ:
-		n = config.R
-	case config.WRITE:
-		n = config.W
-	}
+	n = config.N
 
 	sort.Sort(nodes)
 
@@ -50,7 +47,38 @@ func GetNodesFromKey(key uint32, nodes NodeSlice, op config.Operation) ([]*pb.No
 	return result, nil
 }
 
-//TODO: write function to get successive k nodes for hinted handoff
+// TODO: write function to get successive k nodes for hinted handoff
+func GetSuccessiveNode(
+	key uint32,
+	nodes hash.NodeSlice,
+	op config.Operation,
+) *pb.Node {
+
+	var successor *pb.Node
+	for _, node := range nodes {
+		// successor after n
+		// check if active
+		// else go next
+
+		n := config.N
+
+		sort.Sort(nodes)
+
+		index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Id > (key + uint32(n)) }) - 1
+
+		for i := 0; i < len(nodes); i++ {
+			indexToUse := index + i
+			if indexToUse == len(nodes) {
+				// indexToUse = 0
+			}
+			if nodes[indexToUse].active == true {
+				successor = nodes[indexToUse]
+				break
+			}
+		}
+	}
+	return successor
+}
 
 func GenHash(key string) uint32 {
 	h := md5.New()

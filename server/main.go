@@ -6,25 +6,27 @@ import (
 	hash "dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
 	"flag"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // server is used to implement dynamo.KeyValueStoreServer.
 // TODO: store data in memory first
 type Server struct {
 	pb.UnimplementedNodeServServer
-	id             uint32
-	addr           string
-	mu             *sync.RWMutex // protects the following
-	store          map[string]pb.KeyValue
-	membershipList *pb.MembershipList
-	vectorClocks   map[string]pb.VectorClock
+	id                   uint32
+	addr                 string
+	mu                   *sync.RWMutex // protects the following
+	store                map[string]pb.KeyValue
+	membershipList       *pb.MembershipList
+	hintedMembershipList *pb.HintedHandoffMembershipList
+	vectorClocks         map[string]pb.VectorClock
 }
 
 func NewServer(addr string) *Server {
@@ -36,6 +38,12 @@ func NewServer(addr string) *Server {
 		membershipList: &pb.MembershipList{Nodes: []*pb.Node{
 			&pb.Node{Id: hash.GenHash(addr), Address: addr},
 		}, Timestamp: timestamppb.Now()},
+		hintedMembershipList: &pb.HintedHandoffMembershipList{
+			Hinted: []*pb.HintedHandoffWriteRequest{
+				&pb.KeyValue{Key: hash.GenHash(addr), Value: nil},
+				&pb.Node{Id: hash.GenHash(addr), Address: addr},
+			},
+		},
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
 }
@@ -84,11 +92,63 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	return &pb.WriteResponse{Success: true}, nil
 }
 
-func (s *Server) HintedHandoffWriteRequest(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.WriteResponse, error) {
+func contains(slice []*pb.Node, node *pb.Node) bool {
+	for _, e := range slice {
+		if e == node {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) checkHintedMembershipList(ctx context.Context) {
+	// sepearate function periodically check this struct has anything
+	// if yes send back to the actual node that it is meant for
+	// on every server receive
+
+	// periodically
+
+	ticker := time.NewTicker(30 * time.Second) // Adjust the interval as needed
+
+	for {
+		select {
+		case <-ticker.C:
+			if s.hintedMembershipList != nil {
+				result := SendToNode(ctx, s.hintedMembershipList.Hinted)
+
+				// update list
+				var updatedList *pb.HintedHandoffMembershipList
+				for _, n := range s.hintedMembershipList {
+					if !contains(result, n.Node) {
+						updatedList = append(updatedList, n.Node)
+					}
+				}
+				s.hintedMembershipList = updatedList
+			}
+		}
+	}
+}
+
+func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.HintedHandoffWriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// TODO
-	return &pb.WriteResponse{Success: true}, nil
+
+	// // store this hinted information in a seperated struct
+	// // whcih contains the actual kv and the node
+
+	inactiveNode := in.Node
+
+	for _, node := range s.membershipList.Nodes {
+		if node == inactiveNode {
+			node.active = false
+			break
+		}
+	}
+
+	s.hintedMembershipList = append(s.hintedMembershipList, in)
+
+	return &pb.HintedHandoffWriteResponse{KeyValue: []*pb.KeyValue{in.KeyValue}, Node: in.Node, Success: true}, nil
+	// return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 }
 
 // Read implements dynamo.KeyValueStoreServer
@@ -212,6 +272,8 @@ func main() {
 			log.Fatalf("failed to serve: %v", err)
 		}
 	}()
+
+	go server.checkHintedMembershipList(context.Background())
 
 	// join the seed node if not empty
 	if *seed_addr != "" {
