@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -26,9 +28,14 @@ type Server struct {
 	id             uint32
 	addr           string
 	mu             *sync.RWMutex // protects the following
-	store          map[string]pb.KeyValue
+	store          map[uint32]pb.KeyValue
 	membershipList *pb.MembershipList
 	vectorClocks   map[string]pb.VectorClock
+}
+
+type NodeConnection struct {
+	Address *pb.Node
+	Conn    *grpc.ClientConn
 }
 
 type GetResponse struct {
@@ -40,35 +47,46 @@ func NewServer(addr string) *Server {
 		id:    hash.GenHash(addr),
 		addr:  addr,
 		mu:    &sync.RWMutex{},
-		store: make(map[string]pb.KeyValue),
+		store: make(map[uint32]pb.KeyValue),
 		membershipList: &pb.MembershipList{Nodes: []*pb.Node{
 			&pb.Node{Id: hash.GenHash(addr), Address: addr, Timestamp: timestamppb.Now(), IsAlive: true},
 		}},
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
 }
+func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	nodeID := s.id
+	key := in.KeyValue.Key
+	targetNodes, _ := hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
+	for _, node := range targetNodes {
+		if node.Id == nodeID {
+			return s.Write(ctx, in)
+		}
+	}
+	forwardNode, _ := s.getFastestRespondingServer(targetNodes)
+	coordNode := pb.NewKeyValueStoreClient(forwardNode.Conn)
+	return coordNode.Write(ctx, in)
+}
 
 // Write implements dynamo.KeyValueStoreServer
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	log.Printf("write request received for %v", in.KeyValue.Key)
 	// this should be the ID of the current node
 	nodeID := s.id
 	key := in.KeyValue.Key
 
-	// Use appropriate time for your use case
-	// s.vectorClocks[key] = currentClock
-
-	// Store the new value
-
-	// Replicate write to W-1 other nodes (assuming the first write is the current node)
+	hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
 
 	// Make a gRPC call to Write method of the other node
 	// ...
 	if !in.IsReplica {
 		var currentClock *pb.VectorClock
 		// Update vector clock
-		kv, found := s.store[key]
+		kv, found := s.store[hash.GenHash(key)]
 		if !found {
 			currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
 			currentClock.Timestamps[nodeID] = &pb.ClockStruct{
@@ -81,23 +99,16 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 			currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
 		}
 		in.KeyValue.VectorClock = currentClock
-		s.store[key] = *in.KeyValue
-		value, _ := s.store[key]
-		replicaResult := SendRequestToReplica(
-			kv,
-			s.membershipList.Nodes,
-			config.WRITE,
-			s.addr,
-		) //replica result is an array
+		s.store[hash.GenHash(key)] = *in.KeyValue
+		value, _ := s.store[hash.GenHash(key)]
+		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.addr, true) //how to detect when write fails?
 		result := append(replicaResult, &value)
 		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
 		//TODO: implement timeout when waited to long to get write success. or detect write failure
-	} else {
-		value, _ := s.store[key]
-		return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 	}
+	value, _ := s.store[hash.GenHash(key)]
+	return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 
-	return &pb.WriteResponse{Success: true}, nil
 }
 
 func (s *Server) HintedHandoffWriteRequest(
@@ -129,16 +140,20 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	key := in.Key
 	kv := pb.KeyValue{Key: key}
 
-	value, ok := s.store[key]
+	value, ok := s.store[hash.GenHash(key)]
+	if !in.IsReplica { //coordinator might not be responsible but try find anyways lmao
+		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.READ, s.addr, ok)
+		if ok {
+			replicaResult = append(replicaResult, &value) //contains the addresses of all stores
+		}
+
+		//compare vector clocks
+		result := CompareVectorClocks(replicaResult)
+		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
+	}
+
 	if !ok {
 		return &pb.ReadResponse{Success: false, Message: "Key not found"}, nil
-	}
-	if !in.IsReplica {
-		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.READ, s.addr)
-		result := append(replicaResult, &value) //contains the addresses of all stores
-		//compare vector clocks
-		result = CompareVectorClocks(result)
-		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
 	}
 
 	return &pb.ReadResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
@@ -275,6 +290,47 @@ func (s *Server) SendGossip(ctx context.Context) {
 			}
 		}
 		time.Sleep(time.Second * 5)
+	}
+}
+
+func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection, error) {
+	// Create a channel to receive the first responding server
+	ch := make(chan *NodeConnection, len(servers))
+
+	// Ping all servers concurrently
+	for _, server := range servers {
+		go func(pNode *pb.Node) {
+			conn, err1 := createGRPCConnection(pNode.Address)
+			if err1 != nil {
+				s.updateMembershipList(true, pNode)
+			}
+			client := pb.NewKeyValueStoreClient(conn)
+			connectedNode := &NodeConnection{Address: pNode, Conn: conn}
+			// Call your gRPC ping method here (replace with your actual method)
+			_, err2 := client.Ping(context.Background(), &pb.PingRequest{})
+			if err2 == nil {
+				ch <- connectedNode
+			}
+		}(server)
+	}
+
+	select {
+	case server := <-ch:
+		return server, nil
+	case <-time.After(3 * time.Second):
+		return nil, status.Error(codes.DeadlineExceeded, "No server responded in time")
+	}
+}
+
+func (s *Server) updateMembershipList(true bool, targetNode *pb.Node) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, node := range s.membershipList.Nodes {
+		if node.Address == targetNode.Address {
+			node.IsAlive = false
+			node.Timestamp = timestamppb.Now()
+			break
+		}
 	}
 }
 

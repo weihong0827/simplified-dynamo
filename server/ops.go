@@ -9,8 +9,6 @@ import (
 	"log"
 	"sync/atomic"
 	"time"
-
-	"google.golang.org/grpc"
 )
 
 const (
@@ -37,7 +35,7 @@ func performRead(
 	if r.Success && len(r.GetKeyValue()) == 1 {
 		result <- r.KeyValue[0]
 	} else {
-		return fmt.Errorf(replicaError, "unexpected response format")
+		return fmt.Errorf(replicaError, r.Message)
 	}
 	return nil
 }
@@ -62,7 +60,7 @@ func performWrite(
 	if r.Success {
 		result <- r.KeyValue[0]
 	} else {
-		return fmt.Errorf(replicaError, "unexpected response format")
+		return fmt.Errorf(replicaError, r.Message)
 	}
 	return nil
 }
@@ -110,6 +108,7 @@ func SendRequestToReplica(
 	nodes hash.NodeSlice,
 	op config.Operation,
 	currAddr string,
+	coordsuccess bool,
 ) []*pb.KeyValue {
 	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes)
 	if err != nil {
@@ -119,13 +118,22 @@ func SendRequestToReplica(
 
 	var operation GRPCOperation
 	var requiredResponses int32
+
 	switch op {
 	case config.READ: //TODO: timeout on required responses
 		operation = performRead
-		requiredResponses = int32(config.R)
+		if coordsuccess {
+			requiredResponses = int32(config.R - 1)
+		} else {
+			requiredResponses = int32(config.R)
+		}
 	case config.WRITE:
 		operation = performWrite
-		requiredResponses = int32(config.W)
+		if coordsuccess {
+			requiredResponses = int32(config.W - 1)
+		} else {
+			requiredResponses = int32(config.W)
+		}
 	}
 
 	result := make(chan *pb.KeyValue)
