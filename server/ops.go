@@ -7,6 +7,7 @@ import (
 	pb "dynamoSimplified/pb"
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -18,13 +19,13 @@ const (
 )
 
 // GRPCOperation represents a function type for gRPC operations.
-type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv pb.KeyValue, result chan<- *pb.KeyValue) error
+type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv *pb.KeyValue, result chan<- *pb.KeyValue) error
 
 // Make a gRPC read call.
 func performRead(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
-	kv pb.KeyValue,
+	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
 ) error {
 
@@ -44,7 +45,7 @@ func performRead(
 func performWrite(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
-	kv pb.KeyValue,
+	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
 ) error {
 
@@ -53,11 +54,13 @@ func performWrite(
 
 	// Here's a hypothetical write success message. Adjust it to match your actual API.
 	// result <- pb.KeyValue{Key: key, Value: "Write Successful!"}
-	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: &kv, IsReplica: true})
+	log.Print("printing at perform write", kv.Key, kv.Value, kv.VectorClock)
+	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: kv, IsReplica: true})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success {
+		log.Print("node write succes received at perform write")
 		result <- r.KeyValue[0]
 	} else {
 		return fmt.Errorf(replicaError, r.Message)
@@ -77,8 +80,9 @@ func performHintedHandoffWrite(
 // grpcCall performs the given gRPC operation on the specified node.
 func grpcCall(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	node *pb.Node,
-	kv pb.KeyValue,
+	kv *pb.KeyValue,
 	op GRPCOperation,
 	timeout time.Duration,
 	result chan<- *pb.KeyValue,
@@ -86,6 +90,7 @@ func grpcCall(
 	callCtx, callCancel := context.WithTimeout(ctx, timeout)
 	defer callCancel()
 
+	log.Printf("coordinator connecting to node %v", node.Address)
 	conn, err := CreateGRPCConnection(node.Address)
 	if err != nil {
 		return err
@@ -97,14 +102,13 @@ func grpcCall(
 		// set op to performHintedHandoff
 	}
 	defer conn.Close()
-
 	client := pb.NewKeyValueStoreClient(conn)
 	return op(callCtx, client, kv, result)
 }
 
 // Sends requests to the appropriate replicas.
 func SendRequestToReplica(
-	kv pb.KeyValue,
+	kv *pb.KeyValue,
 	nodes hash.NodeSlice,
 	op config.Operation,
 	currAddr string,
@@ -118,6 +122,7 @@ func SendRequestToReplica(
 
 	var operation GRPCOperation
 	var requiredResponses int32
+	var wg sync.WaitGroup
 
 	switch op {
 	case config.READ: //TODO: timeout on required responses
@@ -147,7 +152,9 @@ func SendRequestToReplica(
 	defer cancel() // Make sure all resources are cleaned up
 
 	// Monitoring goroutine
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for range result {
 			if atomic.AddInt32(&responseCounter, 1) >= requiredResponses {
 				done <- true
@@ -155,13 +162,15 @@ func SendRequestToReplica(
 			}
 		}
 	}()
-
+	log.Print(len(targetNodes))
 	for _, node := range targetNodes {
 		if node.Address == currAddr {
 			continue
 		}
+		wg.Add(1)
 		go func(n *pb.Node) {
-			if err := grpcCall(ctx, n, kv, operation, defaultTimeout, result); err != nil {
+			defer wg.Done()
+			if err := grpcCall(ctx, cancel, n, kv, operation, defaultTimeout, result); err != nil {
 				log.Println("Error in gRPC call:", err)
 			}
 		}(node)
@@ -178,6 +187,6 @@ collect:
 			break collect
 		}
 	}
-
+	wg.Wait()
 	return collectedResults
 }

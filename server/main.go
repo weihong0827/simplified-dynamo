@@ -74,40 +74,48 @@ func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRes
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	log.Printf("write request received for %v", in.KeyValue.Key)
+	log.Printf("write request received for %d", in.KeyValue.Key)
 	// this should be the ID of the current node
 	nodeID := s.id
 	key := in.KeyValue.Key
 
-	hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
+	targetNodes, _ := hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
+	for _, node := range targetNodes { //check that you are indeed responsible for this key
+		if node.Id == nodeID {
+			if !in.IsReplica {
+				var currentClock *pb.VectorClock
+				// Update vector clock
+				kv, found := s.store[hash.GenHash(key)]
+				if !found {
+					currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
+					currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+				} else {
+					currentClock = kv.VectorClock
+					currentClock.Timestamps[nodeID].ClokcVal += 1
+					currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
+				}
+				in.KeyValue.VectorClock = currentClock
+				log.Printf("writing %v at clock %v", in.KeyValue.Key, in.KeyValue.VectorClock)
+				s.store[hash.GenHash(key)] = *in.KeyValue
+				value, ok := s.store[hash.GenHash(key)]
+				replicaResult := SendRequestToReplica(&value, s.membershipList.Nodes, config.WRITE, s.addr, ok) //how to detect when write fails?
+				result := append(replicaResult, &value)
+				return &pb.WriteResponse{KeyValue: result, Success: true}, nil
+				//TODO: implement timeout when waited to long to get write success. or detect write failure
+			}
+			log.Printf("writing %v at clock %v", in.KeyValue.Key, in.KeyValue.VectorClock)
+			s.store[hash.GenHash(key)] = *in.KeyValue
+			value, _ := s.store[hash.GenHash(key)]
+			for _, val := range s.store {
+				log.Print(val.Key, val.Value, val.VectorClock)
+			}
+			return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
+		}
+	}
+	return &pb.WriteResponse{Success: false, Message: "not responsible for this key"}, nil
 
 	// Make a gRPC call to Write method of the other node
 	// ...
-	if !in.IsReplica {
-		var currentClock *pb.VectorClock
-		// Update vector clock
-		kv, found := s.store[hash.GenHash(key)]
-		if !found {
-			currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
-			currentClock.Timestamps[nodeID] = &pb.ClockStruct{
-				ClokcVal:  1,
-				Timestamp: timestamppb.Now(),
-			}
-		} else {
-			currentClock = kv.VectorClock
-			currentClock.Timestamps[nodeID].ClokcVal += 1
-			currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
-		}
-		in.KeyValue.VectorClock = currentClock
-		s.store[hash.GenHash(key)] = *in.KeyValue
-		value, _ := s.store[hash.GenHash(key)]
-		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.addr, true) //how to detect when write fails?
-		result := append(replicaResult, &value)
-		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
-		//TODO: implement timeout when waited to long to get write success. or detect write failure
-	}
-	value, _ := s.store[hash.GenHash(key)]
-	return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 
 }
 
@@ -120,35 +128,39 @@ func (s *Server) HintedHandoffWriteRequest(
 	// TODO
 	return &pb.WriteResponse{Success: true}, nil
 }
-func (s *Server) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.store[in.Key]; ok {
-		delete(s.store, in.Key)
-		return &pb.ReadResponse{Success: true}, nil
-	}
-	return &pb.ReadResponse{Success: false}, nil
 
-}
+// func (s *Server) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse, error) {
+// 	s.mu.Lock()
+// 	defer s.mu.Unlock()
+// 	if _, ok := s.store[in.Key]; ok {
+// 		delete(s.store, in.Key)
+// 		return &pb.ReadResponse{Success: true}, nil
+// 	}
+// 	return &pb.ReadResponse{Success: false}, nil
+
+// }
 
 // Read implements dynamo.KeyValueStoreServer
 func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	log.Printf("read request received for %v", in.Key)
+	log.Printf("node %v read request received for %v", s.id, in.Key)
 
 	key := in.Key
 	kv := pb.KeyValue{Key: key}
 
 	value, ok := s.store[hash.GenHash(key)]
+	log.Printf("node %v read %v, get %v", s.id, in.Key, value)
 	if !in.IsReplica { //coordinator might not be responsible but try find anyways lmao
-		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.READ, s.addr, ok)
+		log.Print("sending to replicas")
+		replicaResult := SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok)
 		if ok {
 			replicaResult = append(replicaResult, &value) //contains the addresses of all stores
 		}
 
 		//compare vector clocks
 		result := CompareVectorClocks(replicaResult)
+		log.Printf("result of read %v", result)
 		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
 	}
 
@@ -175,8 +187,7 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error
 	// TODO: After Andre update the membershipList this should be updated
 	return &pb.JoinResponse{
 		MembershipList: &pb.MembershipList{
-			Nodes:     s.membershipList.Nodes,
-			Timestamp: s.membershipList.Timestamp,
+			Nodes: s.membershipList.Nodes,
 		},
 		Data: nil,
 	}, nil
@@ -300,7 +311,7 @@ func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection
 	// Ping all servers concurrently
 	for _, server := range servers {
 		go func(pNode *pb.Node) {
-			conn, err1 := createGRPCConnection(pNode.Address)
+			conn, err1 := CreateGRPCConnection(pNode.Address)
 			if err1 != nil {
 				s.updateMembershipList(true, pNode)
 			}
@@ -418,7 +429,7 @@ func main() {
 		}
 
 		server.mu.Lock()
-		server.membershipList = resp
+		server.membershipList = resp.MembershipList
 		server.mu.Unlock()
 	}
 

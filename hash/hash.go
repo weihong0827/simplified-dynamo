@@ -5,6 +5,7 @@ import (
 	"dynamoSimplified/config"
 	pb "dynamoSimplified/pb"
 	"encoding/binary"
+	"log"
 	"sort"
 )
 
@@ -47,11 +48,16 @@ func GetNodeFromKeyWithOffSet(
 
 	// Binary search: find the range containing the number.
 	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Id > key }) - 1
+	if index == -1 {
+		index = len(nodes) - 1
+	}
 	for offset, _ := range offsets {
+		log.Printf("offset: %d", offset)
 		indexToAdd := (index + offset) % len(nodes)
+		log.Printf("indexToAdd: %d", indexToAdd)
 		result = append(result, nodes[indexToAdd])
 	}
-
+	log.Printf("result: %v", result)
 	return result, nil
 
 }

@@ -1,5 +1,5 @@
 package config
 
 var (
-	R, W, N int = 3, 2, 5
+	R, W, N int = 2, 2, 3
 )

@@ -10,14 +10,14 @@ service KeyValueStore {
 
   rpc Write(WriteRequest) returns (WriteResponse) {}
   rpc Read(ReadRequest) returns (ReadResponse) {}
-
-  rpc Join(Node) returns (MembershipList) {}
+  rpc Forward(WriteRequest) returns (WriteResponse) {}
+  rpc Join(Node) returns (JoinResponse) {}
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 
   // temporarily send the replica to other machines to store 
   rpc HintedHandoff(HintedHandoffWriteRequest) returns (Empty) {}
   // when the node back alive again, it will send the replica back to the node
-  rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
+  rpc SendReplica(BulkWriteRequest) returns (Empty) {}
 
   rpc Delete(ReadRequest) returns (ReadResponse) {}
 }
