@@ -30,21 +30,7 @@ var mutex = &sync.Mutex{}
 
 func main() {
 	// Initialize the list of backend servers NEED TO RUN AT LEAST 3 NODES
-	servers = []Server{
-		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
-		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
-		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50053"), Address: "127.0.0.1:50053"}, nil},
-	}
-
-	// Establish gRPC connections to all servers
-	for i, server := range servers {
-		conn, err := grpc.Dial(server.Address.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			log.Fatalf("Failed to connect to server at %s: %v", server.Address, err)
-		}
-		servers[i].Conn = conn
-	}
-
+	servers = []Server{}
 	router := gin.Default()
 
 	router.GET("/get", func(c *gin.Context) {
@@ -66,7 +52,7 @@ func main() {
 			log.Fatalf("Failed to read key: %v with error %v", c.Query("key"), err)
 			return
 		}
-		
+
 		result := convertPbReadResponseKeyValueToSlice(resp.KeyValue)
 
 		// Forward the response from the backend server to the client
@@ -80,8 +66,7 @@ func main() {
 		port := c.Query("port")
 		hashVal := hash.GenHash("127.0.0.1:" + port)
 		node, err := hash.GetResponsibleNode(hashVal, getServersAddresses(servers))
-		conn, err := grpc.Dial(node, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		servers = append(servers, Server{&pb.Node{Id: hashVal, Address: "127.0.0.1:" + port}, conn})
+		servers = append(servers, Server{&pb.Node{Id: hashVal, Address: "127.0.0.1:" + port}, nil})
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -158,3 +143,4 @@ func convertPbReadResponseKeyValueToSlice(keyValue []*pb.KeyValue) []string {
 	}
 	return result
 }
+
