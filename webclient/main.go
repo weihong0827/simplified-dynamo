@@ -3,13 +3,15 @@ package main
 import (
 	"context"
 	// "dynamoSimplified/config"
-	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/credentials/insecure"
+
 	hash "dynamoSimplified/hash"
+
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -58,7 +60,7 @@ func main() {
 		client := pb.NewKeyValueStoreClient(conn)
 
 		// TODO: Call your gRPC method here (replace with your actual method), Also make protobuf message
-		resp, err := client.Read(context.Background(), &pb.ReadRequest{Key: c.Query("key")})
+		resp, err := client.Read(context.Background(), &pb.ReadRequest{Key: c.Query("key"), IsReplica: false})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			log.Fatalf("Failed to read key: %v with error %v", c.Query("key"), err)
@@ -99,7 +101,7 @@ func main() {
 
 		client := pb.NewKeyValueStoreClient(conn)
 
-		resp, err := client.Write(context.Background(), &pb.WriteRequest{KeyValue: &pb.KeyValue{Key: c.Query("key"), Value: c.Query("value")}})
+		resp, err := client.Write(context.Background(), &pb.WriteRequest{KeyValue: &pb.KeyValue{Key: c.Query("key"), Value: c.Query("value")}, IsReplica: false})
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
