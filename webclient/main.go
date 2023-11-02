@@ -66,9 +66,11 @@ func main() {
 			log.Fatalf("Failed to read key: %v with error %v", c.Query("key"), err)
 			return
 		}
+		
+		result := convertPbReadResponseKeyValueToSlice(resp.KeyValue)
 
 		// Forward the response from the backend server to the client
-		c.JSON(http.StatusOK, gin.H{"message": resp.Message})
+		c.JSON(http.StatusOK, gin.H{"message": result})
 	})
 
 	router.GET("/addNode", func(c *gin.Context) {
@@ -146,4 +148,13 @@ func getServersAddresses(servers []Server) []*pb.Node {
 		addresses[i] = server.Address
 	}
 	return addresses
+}
+
+func convertPbReadResponseKeyValueToSlice(keyValue []*pb.KeyValue) []string {
+	// Get the value from the key value pair and return []string
+	var result []string
+	for _, kv := range keyValue {
+		result = append(result, kv.Value)
+	}
+	return result
 }
