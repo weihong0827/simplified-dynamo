@@ -39,7 +39,7 @@ func performRead(
 	if r.Success && len(r.GetKeyValue()) == 1 {
 		result <- r.KeyValue[0]
 	} else {
-		return fmt.Errorf(replicaError, "unexpected response format")
+		return fmt.Errorf(replicaError, r.Message)
 	}
 	return nil
 }
@@ -64,7 +64,7 @@ func performWrite(
 	if r.Success {
 		result <- r.KeyValue[0]
 	} else {
-		return fmt.Errorf(replicaError, "unexpected response format")
+		return fmt.Errorf(replicaError, r.Message)
 	}
 	return nil
 }
