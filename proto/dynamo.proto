@@ -18,7 +18,10 @@ service KeyValueStore {
   rpc HintedHandoff(HintedHandoffWriteRequest) returns (Empty) {}
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
+
+  rpc Delete(ReadRequest) returns (ReadResponse) {}
 }
+
 
 message Empty {}
 
@@ -55,6 +58,10 @@ message WriteResponse {
   repeated KeyValue keyValue = 1;
   bool success = 2;
   string message = 3;
+}
+message JoinResponse{
+  repeated KeyValue data= 1;
+  MembershipList membershipList= 2;
 }
 
 message ReadRequest {

@@ -7,8 +7,6 @@ import (
 	pb "dynamoSimplified/pb"
 	"encoding/json"
 	"flag"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -16,6 +14,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // server is used to implement dynamo.KeyValueStoreServer.
@@ -70,7 +71,10 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 		kv, found := s.store[key]
 		if !found {
 			currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
-			currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+			currentClock.Timestamps[nodeID] = &pb.ClockStruct{
+				ClokcVal:  1,
+				Timestamp: timestamppb.Now(),
+			}
 		} else {
 			currentClock = kv.VectorClock
 			currentClock.Timestamps[nodeID].ClokcVal += 1
@@ -79,7 +83,12 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 		in.KeyValue.VectorClock = currentClock
 		s.store[key] = *in.KeyValue
 		value, _ := s.store[key]
-		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.WRITE, s.addr) //replica result is an array
+		replicaResult := SendRequestToReplica(
+			kv,
+			s.membershipList.Nodes,
+			config.WRITE,
+			s.addr,
+		) //replica result is an array
 		result := append(replicaResult, &value)
 		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
 		//TODO: implement timeout when waited to long to get write success. or detect write failure
@@ -91,11 +100,24 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	return &pb.WriteResponse{Success: true}, nil
 }
 
-func (s *Server) HintedHandoffWriteRequest(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.WriteResponse, error) {
+func (s *Server) HintedHandoffWriteRequest(
+	ctx context.Context,
+	in *pb.HintedHandoffWriteRequest,
+) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// TODO
 	return &pb.WriteResponse{Success: true}, nil
+}
+func (s *Server) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.store[in.Key]; ok {
+		delete(s.store, in.Key)
+		return &pb.ReadResponse{Success: true}, nil
+	}
+	return &pb.ReadResponse{Success: false}, nil
+
 }
 
 // Read implements dynamo.KeyValueStoreServer
@@ -122,8 +144,8 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	return &pb.ReadResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 }
 
-// Join implements dynamo.KeyValueStoreServer
-func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, error) {
+// Join implements dynamo.NodeServServer
+func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -132,8 +154,18 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, err
 	// Update membership list
 	s.membershipList.Nodes = append(s.membershipList.Nodes, in)
 
+	// update key range
+
 	// Send membership list to joining node
-	return &pb.MembershipList{Nodes: s.membershipList.Nodes}, nil
+	// TODO: After Andre update the membershipList this should be updated
+	return &pb.JoinResponse{
+		MembershipList: &pb.MembershipList{
+			Nodes:     s.membershipList.Nodes,
+			Timestamp: s.membershipList.Timestamp,
+		},
+		Data: nil,
+	}, nil
+
 }
 
 // Gossip implements dynamo.KeyValueStoreServer
@@ -319,7 +351,10 @@ func main() {
 		client := pb.NewKeyValueStoreClient(conn)
 
 		// join the seed node
-		resp, err := client.Join(context.Background(), &pb.Node{Id: hash.GenHash(*addr), Address: *addr, Timestamp: timestamppb.Now(), IsAlive: true})
+		resp, err := client.Join(
+			context.Background(),
+			&pb.Node{Id: hash.GenHash(*addr), Address: *addr},
+		)
 		if err != nil {
 			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, addrToJoin, addrToJoin)
 		} else {
