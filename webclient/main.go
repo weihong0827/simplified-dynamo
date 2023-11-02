@@ -109,12 +109,17 @@ func getFastestRespondingServer() (*Server, error) {
 	// Ping all servers concurrently
 	for _, server := range servers {
 		go func(s *Server) {
-			client := pb.NewKeyValueStoreClient(s.Conn)
+			// Establish a gRPC connection to the server
+			conn, err := grpc.Dial(s.Address.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			client := pb.NewKeyValueStoreClient(conn)
 
 			// Call your gRPC ping method here (replace with your actual method)
-			_, err := client.Ping(context.Background(), &pb.PingRequest{})
+			resp, err := client.Ping(context.Background(), &pb.PingRequest{})
 			if err == nil {
 				ch <- s
+				log.Printf("Response is %v", resp.Message)
+			} else {
+				log.Printf("Failed to ping server %v with error %v", s.Address.Address, err)
 			}
 		}(&server)
 	}
@@ -143,4 +148,3 @@ func convertPbReadResponseKeyValueToSlice(keyValue []*pb.KeyValue) []string {
 	}
 	return result
 }
-
