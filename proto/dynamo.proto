@@ -11,7 +11,7 @@ service KeyValueStore {
   rpc Write(WriteRequest) returns (WriteResponse) {}
   rpc Read(ReadRequest) returns (ReadResponse) {}
   rpc Forward(WriteRequest) returns (WriteResponse) {}
-  rpc Join(Node) returns (JoinResponse) {}
+  rpc Join(Node) returns (MembershipList) {}
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 
   // temporarily send the replica to other machines to store 

@@ -26,7 +26,7 @@ type KeyValueStoreClient interface {
 	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
 	Forward(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
-	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*JoinResponse, error)
+	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error)
 	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error)
@@ -79,8 +79,8 @@ func (c *keyValueStoreClient) Forward(ctx context.Context, in *WriteRequest, opt
 	return out, nil
 }
 
-func (c *keyValueStoreClient) Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*JoinResponse, error) {
-	out := new(JoinResponse)
+func (c *keyValueStoreClient) Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error) {
+	out := new(MembershipList)
 	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/Join", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ type KeyValueStoreServer interface {
 	Write(context.Context, *WriteRequest) (*WriteResponse, error)
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)
 	Forward(context.Context, *WriteRequest) (*WriteResponse, error)
-	Join(context.Context, *Node) (*JoinResponse, error)
+	Join(context.Context, *Node) (*MembershipList, error)
 	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error)
@@ -158,7 +158,7 @@ func (UnimplementedKeyValueStoreServer) Read(context.Context, *ReadRequest) (*Re
 func (UnimplementedKeyValueStoreServer) Forward(context.Context, *WriteRequest) (*WriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Forward not implemented")
 }
-func (UnimplementedKeyValueStoreServer) Join(context.Context, *Node) (*JoinResponse, error) {
+func (UnimplementedKeyValueStoreServer) Join(context.Context, *Node) (*MembershipList, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Join not implemented")
 }
 func (UnimplementedKeyValueStoreServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {

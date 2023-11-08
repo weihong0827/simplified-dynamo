@@ -5,7 +5,6 @@ import (
 	"dynamoSimplified/config"
 	pb "dynamoSimplified/pb"
 	"encoding/binary"
-	"log"
 	"sort"
 )
 
@@ -52,12 +51,9 @@ func GetNodeFromKeyWithOffSet(
 		index = len(nodes) - 1
 	}
 	for offset, _ := range offsets {
-		log.Printf("offset: %d", offset)
 		indexToAdd := (index + offset) % len(nodes)
-		log.Printf("indexToAdd: %d", indexToAdd)
 		result = append(result, nodes[indexToAdd])
 	}
-	log.Printf("result: %v", result)
 	return result, nil
 
 }

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -28,14 +27,22 @@ func performRead(
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
 ) error {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered in closed channel when performing Read", r)
+		}
+	}()
 
 	r, err := client.Read(ctx, &pb.ReadRequest{Key: kv.Key, IsReplica: true})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success && len(r.GetKeyValue()) == 1 {
+		log.Print("node read succes received at perform read")
 		result <- r.KeyValue[0]
 	} else {
+		log.Print(r.Message)
+		result <- &pb.KeyValue{Key: "Read", Value: "Read Failed!"}
 		return fmt.Errorf(replicaError, r.Message)
 	}
 	return nil
@@ -48,19 +55,16 @@ func performWrite(
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
 ) error {
-
 	// Placeholder: Add your write call and its specifics here.
 	// Example: `w, err := client.Write(ctx, &pb.WriteRequest{Key: key, Value: value})`
 
 	// Here's a hypothetical write success message. Adjust it to match your actual API.
 	// result <- pb.KeyValue{Key: key, Value: "Write Successful!"}
-	log.Print("printing at perform write", kv.Key, kv.Value, kv.VectorClock)
 	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: kv, IsReplica: true})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success {
-		log.Print("node write succes received at perform write")
 		result <- r.KeyValue[0]
 	} else {
 		return fmt.Errorf(replicaError, r.Message)
@@ -113,11 +117,12 @@ func SendRequestToReplica(
 	op config.Operation,
 	currAddr string,
 	coordsuccess bool,
-) []*pb.KeyValue {
+	respChan chan<- []*pb.KeyValue,
+) {
 	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes)
 	if err != nil {
 		log.Println("Error obtaining nodes for key:", err)
-		return nil
+		respChan <- nil
 	}
 
 	var operation GRPCOperation
@@ -144,24 +149,26 @@ func SendRequestToReplica(
 	result := make(chan *pb.KeyValue)
 	defer close(result)
 
-	var responseCounter int32
-	done := make(chan bool)
-	defer close(done)
+	// var responseCounter int32
+	// done := make(chan bool)
+	// defer close(done)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Make sure all resources are cleaned up
 
 	// Monitoring goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for range result {
-			if atomic.AddInt32(&responseCounter, 1) >= requiredResponses {
-				done <- true
-				break
-			}
-		}
-	}()
+	// wg.Add(1)
+	// go func() {
+	// 	defer wg.Done()
+	// 	for range result {
+	// 		if atomic.AddInt32(&responseCounter, 1) >= requiredResponses {
+	// 			log.Print("required responses received")
+	// 			done <- true
+	// 			break
+	// 		}
+	// 		log.Print(responseCounter)
+	// 	}
+	// }()
 	log.Print(len(targetNodes))
 	for _, node := range targetNodes {
 		if node.Address == currAddr {
@@ -178,15 +185,15 @@ func SendRequestToReplica(
 
 	// Collect results until the desired number of responses is reached
 	var collectedResults []*pb.KeyValue
-collect:
 	for {
-		select {
-		case res := <-result:
-			collectedResults = append(collectedResults, res)
-		case <-done:
-			break collect
+		res := <-result
+		collectedResults = append(collectedResults, res)
+
+		if len(collectedResults) >= int(requiredResponses) {
+			respChan <- collectedResults
+			break
 		}
 	}
 	wg.Wait()
-	return collectedResults
+
 }

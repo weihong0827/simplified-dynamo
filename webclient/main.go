@@ -67,8 +67,10 @@ func main() {
 			return
 		}
 
+		result := ConvertPbReadResponseKeyValueToSlice(resp.KeyValue)
+
 		// Forward the response from the backend server to the client
-		c.JSON(http.StatusOK, gin.H{"message": resp.Message})
+		c.JSON(http.StatusOK, gin.H{"message": result})
 	})
 
 	router.GET("/addNode", func(c *gin.Context) {
@@ -151,4 +153,12 @@ func getServersAddresses(servers []Server) []*pb.Node {
 		addresses[i] = server.Address
 	}
 	return addresses
+}
+
+func ConvertPbReadResponseKeyValueToSlice(keyValue []*pb.KeyValue) []string {
+	var result []string
+	for _, kv := range keyValue {
+		result = append(result, kv.Value)
+	}
+	return result
 }

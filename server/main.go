@@ -74,7 +74,7 @@ func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRes
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	log.Printf("write request received for %d", in.KeyValue.Key)
+	log.Printf("write request received for %s", in.KeyValue.Key)
 	// this should be the ID of the current node
 	nodeID := s.id
 	key := in.KeyValue.Key
@@ -91,24 +91,31 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 					currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
 				} else {
 					currentClock = kv.VectorClock
-					currentClock.Timestamps[nodeID].ClokcVal += 1
-					currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
+					nodeClock, cfound := currentClock.Timestamps[nodeID]
+					if cfound {
+						nodeClock.ClokcVal += 1
+						nodeClock.Timestamp = timestamppb.Now()
+					} else {
+						currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+					}
 				}
 				in.KeyValue.VectorClock = currentClock
-				log.Printf("writing %v at clock %v", in.KeyValue.Key, in.KeyValue.VectorClock)
 				s.store[hash.GenHash(key)] = *in.KeyValue
 				value, ok := s.store[hash.GenHash(key)]
-				replicaResult := SendRequestToReplica(&value, s.membershipList.Nodes, config.WRITE, s.addr, ok) //how to detect when write fails?
+				respChan := make(chan []*pb.KeyValue)
+				go SendRequestToReplica(&value, s.membershipList.Nodes, config.WRITE, s.addr, ok, respChan) //how to detect when write fails?
+				replicaResult := <-respChan
+				close(respChan)
 				result := append(replicaResult, &value)
+				log.Print("coordinator, required number of nodes hv written")
 				return &pb.WriteResponse{KeyValue: result, Success: true}, nil
 				//TODO: implement timeout when waited to long to get write success. or detect write failure
 			}
-			log.Printf("writing %v at clock %v", in.KeyValue.Key, in.KeyValue.VectorClock)
 			s.store[hash.GenHash(key)] = *in.KeyValue
 			value, _ := s.store[hash.GenHash(key)]
-			for _, val := range s.store {
-				log.Print(val.Key, val.Value, val.VectorClock)
-			}
+			// for _, val := range s.store {
+			// 	log.Print(s.addr, " node store: ", val.Key, val.Value, val.VectorClock)
+			// }
 			return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 		}
 	}
@@ -137,7 +144,6 @@ func (s *Server) HintedHandoffWriteRequest(
 // 		return &pb.ReadResponse{Success: true}, nil
 // 	}
 // 	return &pb.ReadResponse{Success: false}, nil
-
 // }
 
 // Read implements dynamo.KeyValueStoreServer
@@ -150,17 +156,20 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	kv := pb.KeyValue{Key: key}
 
 	value, ok := s.store[hash.GenHash(key)]
-	log.Printf("node %v read %v, get %v", s.id, in.Key, value)
 	if !in.IsReplica { //coordinator might not be responsible but try find anyways lmao
-		log.Print("sending to replicas")
-		replicaResult := SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok)
+		respChan := make(chan []*pb.KeyValue)
+		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan)
+		replicaResult := <-respChan
+		close(respChan)
 		if ok {
 			replicaResult = append(replicaResult, &value) //contains the addresses of all stores
 		}
-
 		//compare vector clocks
 		result := CompareVectorClocks(replicaResult)
-		log.Printf("result of read %v", result)
+		log.Printf("coordinator result of read %v", result)
+		if len(result) == 0 {
+			return &pb.ReadResponse{KeyValue: result, Success: false, Message: "Key Value store does not exist in the database"}, nil // TODO: raise error
+		}
 		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
 	}
 
@@ -172,7 +181,7 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 }
 
 // Join implements dynamo.NodeServServer
-func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error) {
+func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -185,12 +194,13 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error
 
 	// Send membership list to joining node
 	// TODO: After Andre update the membershipList this should be updated
-	return &pb.JoinResponse{
-		MembershipList: &pb.MembershipList{
-			Nodes: s.membershipList.Nodes,
-		},
-		Data: nil,
-	}, nil
+	// return &pb.JoinResponse{
+	// 	MembershipList: &pb.MembershipList{
+	// 		Nodes: s.membershipList.Nodes,
+	// 	},
+	// 	Data: nil,
+	// }, nil
+	return &pb.MembershipList{Nodes: s.membershipList.Nodes}, nil
 
 }
 
@@ -220,9 +230,12 @@ func ReconcileMembershipList(list1 *pb.MembershipList, list2 *pb.MembershipList)
 	}
 
 	for _, node := range list2.Nodes {
+		// log.Printf("node %v", node)
 		if _, ok := mp[node.Id]; !ok {
+			// log.Printf("node %v", node)
 			mp[node.Id] = node
 		} else {
+			// log.Printf("node in map %v", mp[node.Id])
 			if mp[node.Id].Timestamp.Seconds < node.Timestamp.Seconds {
 				mp[node.Id] = node
 			}
@@ -420,7 +433,7 @@ func main() {
 		// join the seed node
 		resp, err := client.Join(
 			context.Background(),
-			&pb.Node{Id: hash.GenHash(*addr), Address: *addr},
+			&pb.Node{Id: hash.GenHash(*addr), Address: *addr, Timestamp: timestamppb.Now(), IsAlive: true},
 		)
 		if err != nil {
 			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, addrToJoin, addrToJoin)
@@ -429,7 +442,7 @@ func main() {
 		}
 
 		server.mu.Lock()
-		server.membershipList = resp.MembershipList
+		server.membershipList = resp
 		server.mu.Unlock()
 	}
 
