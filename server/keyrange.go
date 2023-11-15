@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"context"
 	"dynamoSimplified/config"
@@ -112,3 +113,5 @@ func retryTransfer(kv *pb.KeyValue, targetNode *pb.Node) {
 	}
 	log.Printf("Failed to transfer after %d retries\n", maxRetries)
 }
+
+*/
