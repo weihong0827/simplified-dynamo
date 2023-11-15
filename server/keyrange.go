@@ -54,3 +54,17 @@ func DeleteReplicaFromTarget(target *pb.Node, start uint32, end uint32) error {
 	})
 	return err
 }
+
+// func retryTransfer(kv *pb.KeyValue, targetNode *pb.Node) {
+// 	for i := 0; i < maxRetries; i++ {
+// 		err := writeToTarget(kv, targetNode)
+// 		if err != nil {
+// 			log.Println("Retry failed:", err)
+// 			time.Sleep(1 * time.Second)
+// 		} else {
+// 			return
+// 		}
+// 	}
+// 	log.Printf("Failed to transfer after %d retries\n", maxRetries)
+// }
+

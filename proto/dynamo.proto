@@ -11,6 +11,8 @@ service KeyValueStore {
   rpc Write(WriteRequest) returns (WriteResponse) {}
   rpc Read(ReadRequest) returns (ReadResponse) {}
 
+
+  rpc Forward(WriteRequest) returns (WriteResponse) {}
   rpc Join(Node) returns (JoinResponse) {}
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 
@@ -19,7 +21,7 @@ service KeyValueStore {
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
 
-  rpc Delete(ReplicaDeleteRequest) returns (Empty) {}
+  rpc Delete(ReadRequest) returns (ReadResponse) {}
   rpc BulkWrite(BulkWriteRequest) returns (Empty) {}
 
   rpc Transfer(ReplicaTransferRequest) returns (Empty){}

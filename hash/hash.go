@@ -47,11 +47,13 @@ func GetNodeFromKeyWithOffSet(
 
 	// Binary search: find the range containing the number.
 	index := sort.Search(len(nodes), func(i int) bool { return nodes[i].Id > key }) - 1
+	if index == -1 {
+		index = len(nodes) - 1
+	}
 	for offset, _ := range offsets {
 		indexToAdd := (index + offset) % len(nodes)
 		result = append(result, nodes[indexToAdd])
 	}
-
 	return result, nil
 
 }

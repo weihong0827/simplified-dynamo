@@ -67,8 +67,10 @@ func main() {
 			return
 		}
 
+		result := ConvertPbReadResponseKeyValueToSlice(resp.KeyValue)
+
 		// Forward the response from the backend server to the client
-		c.JSON(http.StatusOK, gin.H{"message": resp.Message})
+		c.JSON(http.StatusOK, gin.H{"message": result})
 	})
 
 	router.GET("/addNode", func(c *gin.Context) {
@@ -101,7 +103,7 @@ func main() {
 
 		client := pb.NewKeyValueStoreClient(conn)
 
-		resp, err := client.Write(context.Background(), &pb.WriteRequest{KeyValue: &pb.KeyValue{Key: c.Query("key"), Value: c.Query("value")}, IsReplica: false})
+		resp, err := client.Forward(context.Background(), &pb.WriteRequest{KeyValue: &pb.KeyValue{Key: c.Query("key"), Value: c.Query("value")}, IsReplica: false})
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -121,13 +123,18 @@ func getFastestRespondingServer() (*Server, error) {
 
 	// Ping all servers concurrently
 	for _, server := range servers {
+		log.Print("ping to server", server.Address.Address)
 		go func(s *Server) {
-			client := pb.NewKeyValueStoreClient(s.Conn)
+			// Create a gRPC connection to the server
 
+			client := pb.NewKeyValueStoreClient(s.Conn)
+			log.Print("client created")
 			// Call your gRPC ping method here (replace with your actual method)
 			_, err := client.Ping(context.Background(), &pb.PingRequest{})
 			if err == nil {
 				ch <- s
+			} else {
+				log.Print("error in ping", err)
 			}
 		}(&server)
 	}
@@ -146,4 +153,12 @@ func getServersAddresses(servers []Server) []*pb.Node {
 		addresses[i] = server.Address
 	}
 	return addresses
+}
+
+func ConvertPbReadResponseKeyValueToSlice(keyValue []*pb.KeyValue) []string {
+	var result []string
+	for _, kv := range keyValue {
+		result = append(result, kv.Value)
+	}
+	return result
 }

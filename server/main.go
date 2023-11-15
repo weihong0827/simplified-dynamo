@@ -120,46 +120,55 @@ func (s *Server) InitiateKeyRangeChange(
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	log.Printf("write request received for %v", in.KeyValue.Key)
+	log.Printf("write request received for %s", in.KeyValue.Key)
 	// this should be the ID of the current node
 	nodeID := s.id
 	key := in.KeyValue.Key
 
-	hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
+	targetNodes, _ := hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
+	for _, node := range targetNodes { //check that you are indeed responsible for this key
+		if node.Id == nodeID {
+			if !in.IsReplica {
+				var currentClock *pb.VectorClock
+				// Update vector clock
+				kv, found := s.store[hash.GenHash(key)]
+				if !found {
+					currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
+					currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+				} else {
+					currentClock = kv.VectorClock
+					nodeClock, cfound := currentClock.Timestamps[nodeID]
+					if cfound {
+						nodeClock.ClokcVal += 1
+						nodeClock.Timestamp = timestamppb.Now()
+					} else {
+						currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+					}
+				}
+				in.KeyValue.VectorClock = currentClock
+				s.store[hash.GenHash(key)] = *in.KeyValue
+				value, ok := s.store[hash.GenHash(key)]
+				respChan := make(chan []*pb.KeyValue)
+				go SendRequestToReplica(&value, s.membershipList.Nodes, config.WRITE, s.addr, ok, respChan) //how to detect when write fails?
+				replicaResult := <-respChan
+				close(respChan)
+				result := append(replicaResult, &value)
+				log.Print("coordinator, required number of nodes hv written")
+				return &pb.WriteResponse{KeyValue: result, Success: true}, nil
+				//TODO: implement timeout when waited to long to get write success. or detect write failure
+			}
+			s.store[hash.GenHash(key)] = *in.KeyValue
+			value, _ := s.store[hash.GenHash(key)]
+			// for _, val := range s.store {
+			// 	log.Print(s.addr, " node store: ", val.Key, val.Value, val.VectorClock)
+			// }
+			return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
+		}
+	}
+	return &pb.WriteResponse{Success: false, Message: "not responsible for this key"}, nil
 
 	// Make a gRPC call to Write method of the other node
 	// ...
-	if !in.IsReplica {
-		var currentClock *pb.VectorClock
-		// Update vector clock
-		kv, found := s.store[hash.GenHash(key)]
-		if !found {
-			currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
-			currentClock.Timestamps[nodeID] = &pb.ClockStruct{
-				ClokcVal:  1,
-				Timestamp: timestamppb.Now(),
-			}
-		} else {
-			currentClock = kv.VectorClock
-			currentClock.Timestamps[nodeID].ClokcVal += 1
-			currentClock.Timestamps[nodeID].Timestamp = timestamppb.Now()
-		}
-		in.KeyValue.VectorClock = currentClock
-		s.store[hash.GenHash(key)] = *in.KeyValue
-		value, _ := s.store[hash.GenHash(key)]
-		replicaResult := SendRequestToReplica(
-			kv,
-			s.membershipList.Nodes,
-			config.WRITE,
-			s.addr,
-			true,
-		) //how to detect when write fails?
-		result := append(replicaResult, &value)
-		return &pb.WriteResponse{KeyValue: result, Success: true}, nil
-		//TODO: implement timeout when waited to long to get write success. or detect write failure
-	}
-	value, _ := s.store[hash.GenHash(key)]
-	return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
 
 }
 
@@ -189,20 +198,26 @@ func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.E
 func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	log.Printf("read request received for %v", in.Key)
+	log.Printf("node %v read request received for %v", s.id, in.Key)
 
 	key := in.Key
 	kv := pb.KeyValue{Key: key}
 
 	value, ok := s.store[hash.GenHash(key)]
 	if !in.IsReplica { //coordinator might not be responsible but try find anyways lmao
-		replicaResult := SendRequestToReplica(kv, s.membershipList.Nodes, config.READ, s.addr, ok)
+		respChan := make(chan []*pb.KeyValue)
+		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan)
+		replicaResult := <-respChan
+		close(respChan)
 		if ok {
 			replicaResult = append(replicaResult, &value) //contains the addresses of all stores
 		}
-
 		//compare vector clocks
 		result := CompareVectorClocks(replicaResult)
+		log.Printf("coordinator result of read %v", result)
+		if len(result) == 0 {
+			return &pb.ReadResponse{KeyValue: result, Success: false, Message: "Key Value store does not exist in the database"}, nil // TODO: raise error
+		}
 		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
 	}
 
@@ -214,7 +229,7 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 }
 
 // Join implements dynamo.NodeServServer
-func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error) {
+func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -230,7 +245,8 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error
 	// TODO: After Andre update the membershipList this should be updated
 	return &pb.JoinResponse{
 		MembershipList: &pb.MembershipList{
-			Nodes: s.membershipList.Nodes,
+			Nodes:     s.membershipList.Nodes,
+			Timestamp: s.membershipList.Timestamp,
 		},
 		Data: nil,
 	}, nil
@@ -266,9 +282,12 @@ func ReconcileMembershipList(
 	}
 
 	for _, node := range list2.Nodes {
+		// log.Printf("node %v", node)
 		if _, ok := mp[node.Id]; !ok {
+			// log.Printf("node %v", node)
 			mp[node.Id] = node
 		} else {
+			// log.Printf("node in map %v", mp[node.Id])
 			if mp[node.Id].Timestamp.Seconds < node.Timestamp.Seconds {
 				mp[node.Id] = node
 			}
@@ -466,7 +485,7 @@ func main() {
 		// join the seed node
 		resp, err := client.Join(
 			context.Background(),
-			&pb.Node{Id: hash.GenHash(*addr), Address: *addr},
+			&pb.Node{Id: hash.GenHash(*addr), Address: *addr, Timestamp: timestamppb.Now(), IsAlive: true},
 		)
 		if err != nil {
 			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, addrToJoin, addrToJoin)
