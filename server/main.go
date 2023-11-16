@@ -76,6 +76,7 @@ func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRes
 }
 
 func (s *Server) BulkWrite(ctx context.Context, in *pb.BulkWriteRequest) (*pb.Empty, error) {
+	log.Printf("Receive Bulk write request at %d", s.id)
 	for _, kv := range in.KeyValue {
 		idx := hash.GenHash(kv.Key)
 		s.store[idx] = *kv
@@ -86,6 +87,7 @@ func (s *Server) BulkWrite(ctx context.Context, in *pb.BulkWriteRequest) (*pb.Em
 func (s *Server) InitiateKeyRangeChange(
 	newNode *pb.Node,
 ) {
+	log.Printf("Initiating key range change")
 	// Get n nodes
 	// We are gettinging 1 node before the coordinatorNode
 	// and n nodes after the coordinatorNode including the coordinatorNode
@@ -101,18 +103,59 @@ func (s *Server) InitiateKeyRangeChange(
 		return
 	}
 	//modify coordinatorNode
+	log.Printf(
+		"Transfering data from node %d to new node %d for key range %d to %d",
+		s.id,
+		newNode.Id,
+		nodes[0].Id,
+		nodes[config.N-1].Id,
+	)
 	Transfer(s.store, nodes[0].Id, nodes[config.N-1].Id, newNode)
+
+	log.Printf(
+		"Deleting data from node %d  for key range %d to %d",
+		s.id,
+		newNode.Id,
+		nodes[config.N-1].Id,
+	)
+
 	s.Delete(context.Background(), &pb.ReplicaDeleteRequest{
-		Start: nodes[0].Id,
+		Start: newNode.Id,
 		End:   nodes[config.N-1].Id,
 	})
+	log.Println("Coordinator node modification completed")
+
 	// Delete from other nodes
-	for i := 2; i < config.N; i++ {
+	// Only delete if there are more than config.N + 1 nodes in the network
+
+	if len(s.membershipList.Nodes) <= config.N+1 {
+		log.Println("There are not enough nodes in the network to delete from")
+		log.Println("Key range change completed")
+		return
+	}
+	for i := 2; i <= config.N; i++ {
 		node := nodes[i]
 		startIdx := i - config.N + 1
-		endIdx := i + 1
-		DeleteReplicaFromTarget(node, nodes[startIdx].Id, nodes[endIdx].Id)
+		endIdx := startIdx + 1
+		if i == config.N {
+			log.Printf(
+				"Deleting data from node %d  for key range %d to %d",
+				node.Id,
+				nodes[startIdx].Id,
+				newNode.Id,
+			)
+			DeleteReplicaFromTarget(node, nodes[startIdx].Id, newNode.Id)
+		} else {
+			log.Printf(
+				"Deleting data from node %d  for key range %d to %d",
+				node.Id,
+				nodes[startIdx].Id,
+				nodes[endIdx].Id,
+			)
+			DeleteReplicaFromTarget(node, nodes[startIdx].Id, nodes[endIdx].Id)
+		}
 	}
+	log.Println("Key range change completed")
 
 }
 
@@ -134,7 +177,10 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				kv, found := s.store[hash.GenHash(key)]
 				if !found {
 					currentClock = &pb.VectorClock{Timestamps: make(map[uint32]*pb.ClockStruct)}
-					currentClock.Timestamps[nodeID] = &pb.ClockStruct{ClokcVal: 1, Timestamp: timestamppb.Now()}
+					currentClock.Timestamps[nodeID] = &pb.ClockStruct{
+						ClokcVal:  1,
+						Timestamp: timestamppb.Now(),
+					}
 				} else {
 					currentClock = kv.VectorClock
 					nodeClock, cfound := currentClock.Timestamps[nodeID]
@@ -149,7 +195,14 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				s.store[hash.GenHash(key)] = *in.KeyValue
 				value, ok := s.store[hash.GenHash(key)]
 				respChan := make(chan []*pb.KeyValue)
-				go SendRequestToReplica(&value, s.membershipList.Nodes, config.WRITE, s.addr, ok, respChan) //how to detect when write fails?
+				go SendRequestToReplica(
+					&value,
+					s.membershipList.Nodes,
+					config.WRITE,
+					s.addr,
+					ok,
+					respChan,
+				) //how to detect when write fails?
 				replicaResult := <-respChan
 				close(respChan)
 				result := append(replicaResult, &value)
@@ -167,9 +220,6 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	}
 	return &pb.WriteResponse{Success: false, Message: "not responsible for this key"}, nil
 
-	// Make a gRPC call to Write method of the other node
-	// ...
-
 }
 
 func (s *Server) HintedHandoffWriteRequest(
@@ -181,12 +231,12 @@ func (s *Server) HintedHandoffWriteRequest(
 	// TODO
 	return &pb.WriteResponse{Success: true}, nil
 }
-func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.Empty, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	//TODO: Compare and update the membershiplist
 
-	for key, _ := range s.store {
+func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.Empty, error) {
+	//TODO: Compare and update the membershiplist
+	log.Printf("Delete request received at node %d from range %d to %d", s.id, in.Start, in.End)
+
+	for key := range s.store {
 		if key >= in.Start && key <= in.End {
 			delete(s.store, key)
 		}
@@ -216,7 +266,11 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 		result := CompareVectorClocks(replicaResult)
 		log.Printf("coordinator result of read %v", result)
 		if len(result) == 0 {
-			return &pb.ReadResponse{KeyValue: result, Success: false, Message: "Key Value store does not exist in the database"}, nil // TODO: raise error
+			return &pb.ReadResponse{
+				KeyValue: result,
+				Success:  false,
+				Message:  "Key Value store does not exist in the database",
+			}, nil // TODO: raise error
 		}
 		return &pb.ReadResponse{KeyValue: result, Success: true}, nil
 	}
@@ -229,7 +283,7 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 }
 
 // Join implements dynamo.NodeServServer
-func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, error) {
+func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -242,11 +296,9 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.MembershipList, err
 	s.InitiateKeyRangeChange(in)
 
 	// Send membership list to joining node
-	// TODO: After Andre update the membershipList this should be updated
 	return &pb.JoinResponse{
 		MembershipList: &pb.MembershipList{
-			Nodes:     s.membershipList.Nodes,
-			Timestamp: s.membershipList.Timestamp,
+			Nodes: s.membershipList.Nodes,
 		},
 		Data: nil,
 	}, nil
@@ -474,6 +526,7 @@ func main() {
 	// join the seed node if not empty
 	if addrToJoin != "" {
 		// create grpc client
+		log.Printf("Joining %v", addrToJoin)
 		conn, err := grpc.Dial(addrToJoin, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
@@ -485,7 +538,12 @@ func main() {
 		// join the seed node
 		resp, err := client.Join(
 			context.Background(),
-			&pb.Node{Id: hash.GenHash(*addr), Address: *addr, Timestamp: timestamppb.Now(), IsAlive: true},
+			&pb.Node{
+				Id:        hash.GenHash(*addr),
+				Address:   *addr,
+				Timestamp: timestamppb.Now(),
+				IsAlive:   true,
+			},
 		)
 		if err != nil {
 			log.Fatalf("%d failed to join %d at %v, retrying...", server.id, addrToJoin, addrToJoin)

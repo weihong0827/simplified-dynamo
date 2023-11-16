@@ -17,23 +17,23 @@ func CompareVectorClocks(data []*pb.KeyValue) []*pb.KeyValue {
 	for i < len(data) {
 		if data[i].Value == "Read Failed!" {
 			log.Print()
-			data = delete(i, data)
+			data = delete_data(i, data)
 			continue
 		}
 		if current == nil {
 			current = data[i]
-			data = delete(i, data)
+			data = delete_data(i, data)
 			continue
 		}
 		lt, mt := compareClock(current, data[i])
 		if !lt { //there are no elements that are less than the current clock, the first clock is ahead of current
 			current = data[i]
-			data = delete(i, data)
+			data = delete_data(i, data)
 			i = 0
 		} else if mt { //there are elements that are mt and lt the current thus they are concurrent
 			i += 1
 		} else { //no elements mt the current so it is behind the current
-			data = delete(i, data)
+			data = delete_data(i, data)
 		}
 	}
 	data = append(data, current)
@@ -57,7 +57,7 @@ func compareClock(KV1 *pb.KeyValue, KV2 *pb.KeyValue) (bool, bool) {
 	return lt, mt
 }
 
-func delete(i int, data []*pb.KeyValue) []*pb.KeyValue {
+func delete_data(i int, data []*pb.KeyValue) []*pb.KeyValue {
 	newData := make([]*pb.KeyValue, 0)
 	if i == 0 {
 		newData = data[1:]

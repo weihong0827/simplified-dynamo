@@ -13,6 +13,7 @@ func Transfer(
 	end uint32,
 	targetNode *pb.Node,
 ) (*pb.Empty, error) {
+	log.Print("bulk write function 1")
 	dataToTransfer := []*pb.KeyValue{}
 	for key, value := range store {
 		if key >= start && key < end {
@@ -28,6 +29,7 @@ func Transfer(
 }
 
 func BulkWriteToTarget(kvToTransfer []*pb.KeyValue, targetNode *pb.Node) error {
+	log.Print("bulk write function 2")
 	conn, err := CreateGRPCConnection(targetNode.Address)
 	if err != nil {
 		return err
@@ -67,4 +69,3 @@ func DeleteReplicaFromTarget(target *pb.Node, start uint32, end uint32) error {
 // 	}
 // 	log.Printf("Failed to transfer after %d retries\n", maxRetries)
 // }
-

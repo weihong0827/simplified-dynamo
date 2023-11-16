@@ -38,7 +38,10 @@ func main() {
 
 	// Establish gRPC connections to all servers
 	for i, server := range servers {
-		conn, err := grpc.Dial(server.Address.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.Dial(
+			server.Address.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
 		if err != nil {
 			log.Fatalf("Failed to connect to server at %s: %v", server.Address, err)
 		}
@@ -55,12 +58,18 @@ func main() {
 		}
 
 		// Establish a gRPC connection to the fastest server
-		conn, err := grpc.Dial(fastestServer.Address.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.Dial(
+			fastestServer.Address.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
 
 		client := pb.NewKeyValueStoreClient(conn)
 
 		// TODO: Call your gRPC method here (replace with your actual method), Also make protobuf message
-		resp, err := client.Read(context.Background(), &pb.ReadRequest{Key: c.Query("key"), IsReplica: false})
+		resp, err := client.Read(
+			context.Background(),
+			&pb.ReadRequest{Key: c.Query("key"), IsReplica: false},
+		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			log.Fatalf("Failed to read key: %v with error %v", c.Query("key"), err)
@@ -91,6 +100,10 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": node})
 	})
 
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "ok"})
+	})
+
 	router.PUT("/put", func(c *gin.Context) {
 		fastestServer, err := getFastestRespondingServer()
 		if err != nil {
@@ -99,11 +112,20 @@ func main() {
 		}
 
 		// Establish a gRPC connection to the fastest server
-		conn, err := grpc.Dial(fastestServer.Address.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.Dial(
+			fastestServer.Address.Address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
 
 		client := pb.NewKeyValueStoreClient(conn)
 
-		resp, err := client.Forward(context.Background(), &pb.WriteRequest{KeyValue: &pb.KeyValue{Key: c.Query("key"), Value: c.Query("value")}, IsReplica: false})
+		resp, err := client.Forward(
+			context.Background(),
+			&pb.WriteRequest{
+				KeyValue:  &pb.KeyValue{Key: c.Query("key"), Value: c.Query("value")},
+				IsReplica: false,
+			},
+		)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

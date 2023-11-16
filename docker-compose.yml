@@ -1,0 +1,47 @@
+
+version: '3'
+
+services:
+  webclient:
+    build: .
+    command: ./bin/webclient
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    network_mode: host
+    # networks:
+    #     - dynamo
+
+  first-node:
+    build: .
+    #command: ./bin/server --addr="first-node:50051" --webclient="http://webclient:8080/addNode?port=50051"
+    command: ./bin/server --addr="127.0.0.1:50051" --webclient="http://127.0.0.1:8080/addNode?port=50051"
+    depends_on:
+      webclient:
+        condition: service_healthy
+    network_mode: host
+    # networks:
+    #   - dynamo
+
+  # second-node:
+  #   build: .
+  #   command: ./bin/server --addr="second-node:50052" --webclient="http://webclient:8080/addNode?port=50052"
+  #
+  # third-node:
+  #   build: .
+  #   command: ./bin/server --addr="third-node:50053" --webclient="http://webclient:8080/addNode?port=50053"
+  #
+  # fourth-node:
+  #   build: .
+  #   command: ./bin/server --addr="fourth-node:50054" --webclient="http://webclient:8080/addNode?port=50054"
+  #
+  # fifth-node:
+  #   build: .
+  #   command: ./bin/server --addr="fifth-node:50055" --webclient="http://webclient:8080/addNode?port=50055"
+networks:
+  dynamo:
+    driver: bridge
