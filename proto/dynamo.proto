@@ -15,7 +15,7 @@ service KeyValueStore {
   rpc Gossip(GossipMessage) returns (GossipAck) {}
 
   // temporarily send the replica to other machines to store 
-  rpc HintedHandoff(HintedHandoffWriteRequest) returns (Empty) {}
+  rpc HintedHandoff(HintedHandoffWriteRequest) returns (HintedHandoffWriteResponse) {}
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (Empty) {}
 
@@ -47,6 +47,16 @@ message BulkWriteRequest {
 message HintedHandoffWriteRequest {
   KeyValue keyValue = 1;
   Node node = 2;
+}
+
+message HintedHandoffWriteResponse {
+  KeyValue keyValue = 1;
+  Node node = 3;
+  bool success = 2;
+}
+
+message HintedHandoffList {
+  repeated HintedHandoffWriteRequest nodes = 1;
 }
 
 message WriteRequest {
@@ -104,3 +114,4 @@ message PingRequest {
 message PingResponse {
   string message = 1;
 }
+

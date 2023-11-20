@@ -30,6 +30,7 @@ type Server struct {
 	mu             *sync.RWMutex // protects the following
 	store          map[uint32]pb.KeyValue
 	membershipList *pb.MembershipList
+	hintedList     *pb.HintedHandoffList
 	vectorClocks   map[string]pb.VectorClock
 }
 
@@ -51,6 +52,22 @@ func NewServer(addr string) *Server {
 		membershipList: &pb.MembershipList{Nodes: []*pb.Node{
 			&pb.Node{Id: hash.GenHash(addr), Address: addr, Timestamp: timestamppb.Now(), IsAlive: true},
 		}},
+		hintedList: &pb.HintedHandoffList{Nodes: []*pb.HintedHandoffWriteRequest{}},
+
+		// hintedList: &pb.HintedHandoffList{
+		// 	Nodes: []*pb.HintedHandoffWriteRequest{
+		// 		&pb.HintedHandoffWriteRequest{
+		// 			KeyValue: &pb.KeyValue{
+		// 				Key:   strconv.Itoa(int(hash.GenHash(addr))),
+		// 				Value: "",
+		// 			},
+		// 			Node: &pb.Node{
+		// 				Id:      hash.GenHash(addr),
+		// 				Address: addr,
+		// 			},
+		// 		},
+		// 	},
+		// },
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
 }
@@ -126,14 +143,66 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 
 }
 
-func (s *Server) HintedHandoffWriteRequest(
-	ctx context.Context,
-	in *pb.HintedHandoffWriteRequest,
-) (*pb.WriteResponse, error) {
+func contains(slice []*pb.Node, node *pb.Node) bool {
+	for _, e := range slice {
+		if e == node {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) checkHintedList(ctx context.Context) {
+	// sepearate function periodically check this struct has anything
+	// if yes send back to the actual node that it is meant for
+	// on every server receive
+
+	// periodically
+
+	log.Printf("Current server hintedhandoff list %v", s.hintedList)
+
+	ticker := time.NewTicker(30 * time.Second) // Adjust the interval as needed
+
+	for {
+		select {
+		case <-ticker.C:
+			if len(s.hintedList.Nodes) != 0 {
+				log.Printf("Retry sending to hintedhandoff list %v", s.hintedList)
+
+				result := SendToNode(ctx, s.hintedList.Nodes)
+
+				// update list
+				var updatedList []*pb.HintedHandoffWriteRequest
+				for _, n := range s.hintedList.Nodes {
+					if !contains(result, n.Node) {
+						updatedList = append(updatedList, n)
+					}
+				}
+				s.hintedList.Nodes = updatedList
+			}
+		}
+	}
+}
+
+func (s *Server) HintedHandoff(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.HintedHandoffWriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// TODO
-	return &pb.WriteResponse{Success: true}, nil
+
+	// // store this hinted information in a separated struct
+	// // which contains the actual kv and the node
+
+	inactiveNode := in.Node
+
+	for _, node := range s.membershipList.Nodes {
+		if node == inactiveNode {
+			node.IsAlive = false
+			break
+		}
+	}
+
+	s.hintedList.Nodes = append(s.hintedList.Nodes, in)
+
+	return &pb.HintedHandoffWriteResponse{KeyValue: in.KeyValue, Node: in.Node, Success: true}, nil
 }
 
 // func (s *Server) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse, error) {
@@ -417,6 +486,8 @@ func main() {
 			log.Fatalf("failed to serve: %v", err)
 		}
 	}()
+
+	go server.checkHintedList(context.Background())
 
 	addrToJoin := getSeedNodeAddr(*webclient)
 	// join the seed node if not empty

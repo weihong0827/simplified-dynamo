@@ -29,7 +29,7 @@ type KeyValueStoreClient interface {
 	Join(ctx context.Context, in *Node, opts ...grpc.CallOption) (*MembershipList, error)
 	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
-	HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error)
+	HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*HintedHandoffWriteResponse, error)
 	// when the node back alive again, it will send the replica back to the node
 	SendReplica(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*Empty, error)
 	Delete(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
@@ -97,8 +97,8 @@ func (c *keyValueStoreClient) Gossip(ctx context.Context, in *GossipMessage, opt
 	return out, nil
 }
 
-func (c *keyValueStoreClient) HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
+func (c *keyValueStoreClient) HintedHandoff(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*HintedHandoffWriteResponse, error) {
+	out := new(HintedHandoffWriteResponse)
 	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/HintedHandoff", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ type KeyValueStoreServer interface {
 	Join(context.Context, *Node) (*MembershipList, error)
 	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
-	HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error)
+	HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*HintedHandoffWriteResponse, error)
 	// when the node back alive again, it will send the replica back to the node
 	SendReplica(context.Context, *BulkWriteRequest) (*Empty, error)
 	Delete(context.Context, *ReadRequest) (*ReadResponse, error)
@@ -164,7 +164,7 @@ func (UnimplementedKeyValueStoreServer) Join(context.Context, *Node) (*Membershi
 func (UnimplementedKeyValueStoreServer) Gossip(context.Context, *GossipMessage) (*GossipAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Gossip not implemented")
 }
-func (UnimplementedKeyValueStoreServer) HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*Empty, error) {
+func (UnimplementedKeyValueStoreServer) HintedHandoff(context.Context, *HintedHandoffWriteRequest) (*HintedHandoffWriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HintedHandoff not implemented")
 }
 func (UnimplementedKeyValueStoreServer) SendReplica(context.Context, *BulkWriteRequest) (*Empty, error) {
