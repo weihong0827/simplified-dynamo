@@ -77,6 +77,7 @@ func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRes
 
 func (s *Server) BulkWrite(ctx context.Context, in *pb.BulkWriteRequest) (*pb.Empty, error) {
 	log.Printf("Receive Bulk write request at %d", s.id)
+
 	for _, kv := range in.KeyValue {
 		idx := hash.GenHash(kv.Key)
 		s.store[idx] = *kv

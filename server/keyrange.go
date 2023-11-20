@@ -23,13 +23,13 @@ func Transfer(
 	err := BulkWriteToTarget(dataToTransfer, targetNode)
 	if err != nil {
 		log.Println("Error when transferring data:", err)
-		return &pb.Empty{}, errors.New("Error when transferring data")
+		return &pb.Empty{}, errors.New("error when transferring data")
 	}
 	return &pb.Empty{}, nil
 }
 
 func BulkWriteToTarget(kvToTransfer []*pb.KeyValue, targetNode *pb.Node) error {
-	log.Print("bulk write function 2")
+	log.Printf("bulk write function 2 to Address %s", targetNode.Address)
 	conn, err := CreateGRPCConnection(targetNode.Address)
 	if err != nil {
 		return err
@@ -37,9 +37,11 @@ func BulkWriteToTarget(kvToTransfer []*pb.KeyValue, targetNode *pb.Node) error {
 	defer conn.Close()
 
 	client := pb.NewKeyValueStoreClient(conn)
+	log.Printf("hi1")
 	_, err = client.BulkWrite(context.Background(), &pb.BulkWriteRequest{
 		KeyValue: kvToTransfer,
 	})
+	log.Printf("hi2")
 	return err
 }
 
@@ -49,6 +51,7 @@ func DeleteReplicaFromTarget(target *pb.Node, start uint32, end uint32) error {
 		return err
 	}
 	defer conn.Close()
+
 	client := pb.NewKeyValueStoreClient(conn)
 	_, err = client.Delete(context.Background(), &pb.ReplicaDeleteRequest{
 		Start: start,

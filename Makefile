@@ -17,5 +17,9 @@ fourth-node:
 fifth-node:
 	go run ./server --addr="127.0.0.1:50055" --webclient="http://127.0.0.1:8080/addNode?port=50055" 
 
-docker-run:
-	docker run --network simplified-dynamo_dynamo --name second-node node ./bin/server --addr="second-node:50052" --webclient="http://webclient:8080/addNode?port=50052"
+
+run-second-node:
+	docker rm second-node
+	docker run --network host --name second-node node ./bin/server --addr="127.0.0.1:50052" --webclient="http://127.0.0.1:8080/addNode?port=50052"
+
+
