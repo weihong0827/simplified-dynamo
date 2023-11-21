@@ -16,15 +16,16 @@ services:
     # networks:
     #     - dynamo
 
-  # first-node:
-  #   build: .
-  #   #command: ./bin/server --addr="first-node:50051" --webclient="http://webclient:8080/addNode?port=50051"
-  #   command: ./bin/server --addr="127.0.0.1:50051" --webclient="http://127.0.0.1:8080/addNode?port=50051"
-  #   ports:
-  #     - "50051:50051"
-  #   depends_on:
-  #     webclient:
-  #       condition: service_healthy
+  first-node:
+    build: .
+    command: ./bin/server --addr="first-node:50051" --webclient="http://webclient:8080/addNode?address=first-node:50051"
+    # command: ./bin/server --addr="127.0.0.1:50051" --webclient="http://127.0.0.1:8080/addNode?port=50051"
+    ports:
+      - "50051:50051"
+    depends_on:
+      webclient:
+        condition: service_healthy
+
   second-node:
     build: .
     command: ./bin/server --addr="second-node:50052" --webclient="http://webclient:8080/addNode?address=second-node:50052"
@@ -35,34 +36,36 @@ services:
       webclient:
         condition: service_healthy
 
+  third-node:
+    build: .
+    command: ./bin/server --addr="third-node:50052" --webclient="http://webclient:8080/addNode?address=third-node:50052"
+    # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
+    ports:
+      - "50053:50053"
+    depends_on:
+      webclient:
+        condition: service_healthy
 
-    #network_mode: host
-    # networks:
-    #   - dynamo
-
-  # second-node:
-  #   build: .
-  #   command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://127.0.0.1:8080/addNode?port=50052"
-  #   depends_on:
-  #     webclient:
-  #       condition: service_healthy
-  #   network_mode: host
+  fourth-node:
+    build: .
+    command: ./bin/server --addr="fourth-node:50052" --webclient="http://webclient:8080/addNode?address=fourth-node:50052"
+    # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
+    ports:
+      - "50054:50054"
+    depends_on:
+      webclient:
+        condition: service_healthy
   
-  # third-node:
-  #   build: .
-  #   command: ./bin/server --addr="127.0.0.1:50053" --webclient="http://127.0.0.1:8080/addNode?port=50053"
-  #   depends_on:
-  #     webclient:
-  #       condition: service_healthy
-  #   network_mode: host
-  #
-  # fourth-node:
-  #   build: .
-  #   command: ./bin/server --addr="fourth-node:50054" --webclient="http://webclient:8080/addNode?port=50054"
-  #
-  # fifth-node:
-  #   build: .
-  #   command: ./bin/server --addr="fifth-node:50055" --webclient="http://webclient:8080/addNode?port=50055"
+  fifth-node:
+    build: .
+    command: ./bin/server --addr="fifth-node:50052" --webclient="http://webclient:8080/addNode?address=fifth-node:50052"
+    # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
+    ports:
+      - "50055:50055"
+    depends_on:
+      webclient:
+        condition: service_healthy
+
 networks:
   dynamo:
     driver: bridge

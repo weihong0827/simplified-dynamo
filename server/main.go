@@ -61,18 +61,19 @@ func NewServer(addr string) *Server {
 }
 func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	log.Print("HI FROM FORWARD")
+	// defer s.mu.Unlock()
 	nodeID := s.id
 	key := in.KeyValue.Key
 	targetNodes, _ := hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
 	for _, node := range targetNodes {
 		if node.Id == nodeID {
+			s.mu.Unlock()
 			return s.Write(ctx, in)
 		}
 	}
 	forwardNode, _ := s.getFastestRespondingServer(targetNodes)
 	coordNode := pb.NewKeyValueStoreClient(forwardNode.Conn)
+	s.mu.Unlock()
 	return coordNode.Write(ctx, in)
 }
 
@@ -431,6 +432,7 @@ func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection
 	for _, server := range servers {
 		go func(pNode *pb.Node) {
 			conn, err1 := CreateGRPCConnection(pNode.Address)
+			log.Print("Get fastest responding node: Pnode address", pNode.Address)
 			if err1 != nil {
 				s.updateMembershipList(true, pNode)
 			}
