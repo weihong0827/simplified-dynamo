@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+
 	// "dynamoSimplified/config"
 	"log"
 	"net/http"
@@ -29,7 +30,7 @@ var servers []Server
 var mutex = &sync.Mutex{}
 
 func main() {
-	// Initialize the list of backend servers NEED TO RUN AT LEAST 3 NODES
+	// Initialize the list of backend servers NEED TO RUN AT LEAST 4 NODES
 	servers = []Server{
 		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
 		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
@@ -86,11 +87,16 @@ func main() {
 		mutex.Lock()
 		defer mutex.Unlock()
 
-		port := c.Query("port")
-		hashVal := hash.GenHash("127.0.0.1:" + port)
+		address := c.Query("address")
+		hashVal := hash.GenHash(address)
 		node, err := hash.GetResponsibleNode(hashVal, getServersAddresses(servers))
-		conn, err := grpc.Dial(node, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		servers = append(servers, Server{&pb.Node{Id: hashVal, Address: "127.0.0.1:" + port}, conn})
+		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		servers = append(servers, Server{&pb.Node{Id: hashVal, Address: address}, conn})
+		// port := c.Query("port")
+		// hashVal := hash.GenHash("127.0.0.1:" + port)
+		// node, err := hash.GetResponsibleNode(hashVal, getServersAddresses(servers))
+		// conn, err := grpc.Dial(node, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		// servers = append(servers, Server{&pb.Node{Id: hashVal, Address: "127.0.0.1:" + port}, conn})
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -112,13 +118,13 @@ func main() {
 		}
 
 		// Establish a gRPC connection to the fastest server
+		log.Print(fastestServer.Address.Address)
 		conn, err := grpc.Dial(
 			fastestServer.Address.Address,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
 
 		client := pb.NewKeyValueStoreClient(conn)
-
 		resp, err := client.Forward(
 			context.Background(),
 			&pb.WriteRequest{
@@ -141,12 +147,12 @@ func main() {
 
 func getFastestRespondingServer() (*Server, error) {
 	// Create a channel to receive the first responding server
-	ch := make(chan *Server, len(servers))
+	ch := make(chan Server, len(servers))
 
 	// Ping all servers concurrently
 	for _, server := range servers {
 		log.Print("ping to server", server.Address.Address)
-		go func(s *Server) {
+		go func(s Server) {
 			// Create a gRPC connection to the server
 
 			client := pb.NewKeyValueStoreClient(s.Conn)
@@ -158,12 +164,12 @@ func getFastestRespondingServer() (*Server, error) {
 			} else {
 				log.Print("error in ping", err)
 			}
-		}(&server)
+		}(server)
 	}
 
 	select {
 	case server := <-ch:
-		return server, nil
+		return &server, nil
 	case <-time.After(3 * time.Second):
 		return nil, status.Error(codes.DeadlineExceeded, "No server responded in time")
 	}

@@ -62,6 +62,7 @@ func NewServer(addr string) *Server {
 func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	log.Print("HI FROM FORWARD")
 	nodeID := s.id
 	key := in.KeyValue.Key
 	targetNodes, _ := hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)

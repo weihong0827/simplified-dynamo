@@ -12,18 +12,31 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    network_mode: host
+    # network_mode: host
     # networks:
     #     - dynamo
 
-  first-node:
+  # first-node:
+  #   build: .
+  #   #command: ./bin/server --addr="first-node:50051" --webclient="http://webclient:8080/addNode?port=50051"
+  #   command: ./bin/server --addr="127.0.0.1:50051" --webclient="http://127.0.0.1:8080/addNode?port=50051"
+  #   ports:
+  #     - "50051:50051"
+  #   depends_on:
+  #     webclient:
+  #       condition: service_healthy
+  second-node:
     build: .
-    #command: ./bin/server --addr="first-node:50051" --webclient="http://webclient:8080/addNode?port=50051"
-    command: ./bin/server --addr="127.0.0.1:50051" --webclient="http://127.0.0.1:8080/addNode?port=50051"
+    command: ./bin/server --addr="second-node:50052" --webclient="http://webclient:8080/addNode?address=second-node:50052"
+    # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
+    ports:
+      - "50052:50052"
     depends_on:
       webclient:
         condition: service_healthy
-    network_mode: host
+
+
+    #network_mode: host
     # networks:
     #   - dynamo
 

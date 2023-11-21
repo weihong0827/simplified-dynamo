@@ -17,8 +17,10 @@ fourth-node:
 fifth-node:
 	go run ./server --addr="127.0.0.1:50055" --webclient="http://127.0.0.1:8080/addNode?port=50055" 
 
+docker-build:
+	docker build -t node .
 
-run-second-node:
+run-second-node:docker-build
 	docker rm second-node
 	docker run --network host --name second-node node ./bin/server --addr="127.0.0.1:50052" --webclient="http://127.0.0.1:8080/addNode?port=50052"
 
