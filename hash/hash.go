@@ -73,7 +73,10 @@ func GetResponsibleNode(key uint32, nodes NodeSlice) (string, error) {
 	return nodes[index].Address, nil
 }
 
-//TODO: write function to get successive k nodes for hinted handoff
+// TODO: write function to get successive k nodes for hinted handoff
+func GetSuccessiveNode(key uint32, nodes []*pb.Node) *pb.Node {
+	return nodes[0]
+}
 
 func GenHash(key string) uint32 {
 	h := md5.New()

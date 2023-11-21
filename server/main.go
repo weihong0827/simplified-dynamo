@@ -30,6 +30,7 @@ type Server struct {
 	mu             *sync.RWMutex // protects the following
 	store          map[uint32]pb.KeyValue
 	membershipList *pb.MembershipList
+	hintedList     *pb.HintedHandoffList
 	vectorClocks   map[string]pb.VectorClock
 }
 
@@ -56,6 +57,7 @@ func NewServer(addr string) *Server {
 				IsAlive:   true,
 			},
 		}},
+		hintedList:   &pb.HintedHandoffList{Nodes: []*pb.HintedHandoffWriteRequest{}},
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
 }
@@ -225,14 +227,69 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 
 }
 
-func (s *Server) HintedHandoffWriteRequest(
-	ctx context.Context,
-	in *pb.HintedHandoffWriteRequest,
-) (*pb.WriteResponse, error) {
+func contains(slice []*pb.Node, node *pb.Node) bool {
+	for _, e := range slice {
+		if e == node {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) checkHintedList(ctx context.Context) {
+	// sepearate function periodically check this struct has anything
+	// if yes send back to the actual node that it is meant for
+	// on every server receive
+
+	// periodically
+
+	log.Printf("Current server hintedhandoff list %v", s.hintedList)
+
+	ticker := time.NewTicker(30 * time.Second) // Adjust the interval as needed
+
+	for {
+		select {
+		case <-ticker.C:
+			if len(s.hintedList.Nodes) != 0 {
+				log.Printf("Retry sending to hintedhandoff list %v", s.hintedList)
+
+				result := SendToNode(ctx, s.hintedList.Nodes)
+
+				// update list
+				var updatedList []*pb.HintedHandoffWriteRequest
+				for _, n := range s.hintedList.Nodes {
+					if !contains(result, n.Node) {
+						updatedList = append(updatedList, n)
+					}
+				}
+				if updatedList != nil {
+					s.hintedList.Nodes = updatedList
+				}
+			}
+		}
+	}
+}
+
+func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.HintedHandoffWriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// TODO
-	return &pb.WriteResponse{Success: true}, nil
+
+	log.Printf("HintedHandoffWrite request received for key : %s, by Node %d", in.KeyValue.Key, in.Node.Id)
+	// // store this hinted information in a separated struct
+	// // which contains the actual kv and the node
+
+	inactiveNode := in.Node
+
+	for _, node := range s.membershipList.Nodes {
+		if node == inactiveNode {
+			node.IsAlive = false
+			break
+		}
+	}
+
+	s.hintedList.Nodes = append(s.hintedList.Nodes, in)
+
+	return &pb.HintedHandoffWriteResponse{KeyValue: in.KeyValue, Node: in.Node, Success: true}, nil
 }
 
 func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.Empty, error) {
@@ -370,6 +427,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		}
 
 		// create grpc client
+		log.Printf("SSSSSending gossip to %s.... %v ..... %d", targetNode, targetNode.Address, &targetNode.Address)
 		conn, err := grpc.Dial(targetNode.Address, grpc.WithInsecure())
 		if err != nil {
 			log.Printf("fail to dial: %v", err)
@@ -525,6 +583,9 @@ func main() {
 			log.Fatalf("failed to serve: %v", err)
 		}
 	}()
+
+	log.Printf("Checking Hinted List %s", server.hintedList)
+	go server.checkHintedList(context.Background())
 
 	addrToJoin := getSeedNodeAddr(*webclient)
 	// join the seed node if not empty
