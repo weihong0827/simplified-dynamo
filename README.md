@@ -15,6 +15,18 @@ The specific breakdown and understanding of dynamo can be found in the blog [her
 - **Hinted Handoff:** If a node supposed to store a replica is down, the data is temporarily stored in a subsequent node, which continuously checks for the original node to come back online and transfers the data back to it once it does.
 - **Gossip-based Protocol:** Nodes use a gossip-based protocol to propagate the membership list, ensuring system scalability and robustness.
 
+# How to get it running
+You can build the entire network using the `docker compose` file
+
+It contains a `webclient` which is a simple web client to interact with the network and `node` container which is the actual network
+
+Just simplily run `docker-compose up --build` in the terminal and it should build the network for you
+
+If you wish to add more nodes to the network, you can simply add more nodes in the `docker-compose.yml` file with similar fields and run `docker-compose up --build` again
+
+When a network is running and you wish to simulate a new node to join the network. you can construct the a `make` command that is similar to the `run-second-node` command in the `Makefile`
+
+
 # How It Works
 
 ## Read Requests
