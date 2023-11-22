@@ -89,19 +89,17 @@ func main() {
 
 		address := c.Query("address")
 		hashVal := hash.GenHash(address)
-		node, err := hash.GetResponsibleNode(hashVal, getServersAddresses(servers))
-		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		servers = append(servers, Server{&pb.Node{Id: hashVal, Address: address}, conn})
-		// port := c.Query("port")
-		// hashVal := hash.GenHash("127.0.0.1:" + port)
-		// node, err := hash.GetResponsibleNode(hashVal, getServersAddresses(servers))
-		// conn, err := grpc.Dial(node, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		// servers = append(servers, Server{&pb.Node{Id: hashVal, Address: "127.0.0.1:" + port}, conn})
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		node, nodeRespErr := hash.GetResponsibleNode(hashVal, getServersAddresses(servers))
+		if nodeRespErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": nodeRespErr.Error()})
 			return
 		}
+		conn, connErr := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if connErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": connErr.Error()})
+			return
+		}
+		servers = append(servers, Server{&pb.Node{Id: hashVal, Address: address}, conn})
 
 		c.JSON(http.StatusOK, gin.H{"message": node})
 	})
@@ -123,6 +121,11 @@ func main() {
 			fastestServer.Address.Address,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
+		
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 
 		client := pb.NewKeyValueStoreClient(conn)
 		resp, err := client.Forward(
@@ -151,18 +154,18 @@ func getFastestRespondingServer() (*Server, error) {
 
 	// Ping all servers concurrently
 	for _, server := range servers {
-		log.Print("ping to server", server.Address.Address)
+		log.Print("Ping to server", server.Address.Address)
 		go func(s Server) {
 			// Create a gRPC connection to the server
 
 			client := pb.NewKeyValueStoreClient(s.Conn)
-			log.Print("client created")
+			log.Print("Client created")
 			// Call your gRPC ping method here (replace with your actual method)
 			_, err := client.Ping(context.Background(), &pb.PingRequest{})
 			if err == nil {
 				ch <- s
 			} else {
-				log.Print("error in ping", err)
+				log.Print("Error in ping", err)
 			}
 		}(server)
 	}
