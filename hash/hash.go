@@ -50,8 +50,11 @@ func GetNodeFromKeyWithOffSet(
 	if index == -1 {
 		index = len(nodes) - 1
 	}
-	for offset, _ := range offsets {
+	for _, offset := range offsets {
 		indexToAdd := (index + offset) % len(nodes)
+		if indexToAdd == -1 {
+			indexToAdd = len(nodes) - 1
+		}
 		result = append(result, nodes[indexToAdd])
 	}
 	return result, nil

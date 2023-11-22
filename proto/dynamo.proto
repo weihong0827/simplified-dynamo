@@ -65,17 +65,17 @@ message BulkWriteRequest {
 
 message HintedHandoffWriteRequest {
   KeyValue keyValue = 1;
-  Node node = 2;
+  uint32 nodeid = 2;
 }
 
 message HintedHandoffWriteResponse {
   KeyValue keyValue = 1;
-  Node node = 3;
+  uint32 nodeid = 3;
   bool success = 2;
 }
 
 message HintedHandoffList {
-  repeated HintedHandoffWriteRequest nodes = 1;
+  repeated HintedHandoffWriteRequest requests = 1;
 }
 
 message WriteRequest {
