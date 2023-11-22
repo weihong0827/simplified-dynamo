@@ -38,7 +38,7 @@ services:
 
   third-node:
     build: .
-    command: ./bin/server --addr="third-node:50052" --webclient="http://webclient:8080/addNode?address=third-node:50052"
+    command: ./bin/server --addr="third-node:50053" --webclient="http://webclient:8080/addNode?address=third-node:50053"
     # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
     ports:
       - "50053:50053"
@@ -48,7 +48,7 @@ services:
 
   fourth-node:
     build: .
-    command: ./bin/server --addr="fourth-node:50052" --webclient="http://webclient:8080/addNode?address=fourth-node:50052"
+    command: ./bin/server --addr="fourth-node:50054" --webclient="http://webclient:8080/addNode?address=fourth-node:50054"
     # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
     ports:
       - "50054:50054"
@@ -58,7 +58,7 @@ services:
   
   fifth-node:
     build: .
-    command: ./bin/server --addr="fifth-node:50052" --webclient="http://webclient:8080/addNode?address=fifth-node:50052"
+    command: ./bin/server --addr="fifth-node:50055" --webclient="http://webclient:8080/addNode?address=fifth-node:50055"
     # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
     ports:
       - "50055:50055"
