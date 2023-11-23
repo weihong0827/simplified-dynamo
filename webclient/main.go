@@ -83,6 +83,31 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": result})
 	})
 
+	router.GET("/killNode", func(c *gin.Context) {
+		address := c.Query("address")
+		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		client := pb.NewKeyValueStoreClient(conn)
+		_, err = client.KillNode(context.Background(), &pb.Empty{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Killed node at address: " + address})
+	})
+	router.GET("/reviveNode", func(c *gin.Context) {
+		address := c.Query("address")
+		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		client := pb.NewKeyValueStoreClient(conn)
+		_, err = client.ReviveNode(context.Background(), &pb.Empty{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Revive node at address: " + address})
+	})
+
 	router.GET("/addNode", func(c *gin.Context) {
 		mutex.Lock()
 		defer mutex.Unlock()

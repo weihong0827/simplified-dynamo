@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"errors"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,7 +34,12 @@ type Server struct {
 	membershipList *pb.MembershipList
 	hintedList     *pb.HintedHandoffList
 	vectorClocks   map[string]pb.VectorClock
+	amIAlive       bool
 }
+
+const (
+	nodeFailure = "Node is dead"
+)
 
 type NodeConnection struct {
 	Address *pb.Node
@@ -59,6 +66,7 @@ func NewServer(addr string) *Server {
 		}},
 		hintedList:   &pb.HintedHandoffList{Requests: []*pb.HintedHandoffWriteRequest{}},
 		vectorClocks: make(map[string]pb.VectorClock),
+		amIAlive:     true,
 	}
 }
 func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
@@ -163,11 +171,18 @@ func (s *Server) InitiateKeyRangeChange(
 	log.Println("Key range change completed")
 
 }
+func (s *Server) nodeAliveInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	if !s.amIAlive {
+		return nil, status.Error(505, nodeFailure)
+	}
+	return handler(ctx, req)
+}
 
 // Write implements dynamo.KeyValueStoreServer
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	log.Printf("write request received for %s", in.KeyValue.Key)
 	// this should be the ID of the current node
 	nodeID := s.id
@@ -200,6 +215,7 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				s.store[hash.GenHash(key)] = *in.KeyValue
 				value, ok := s.store[hash.GenHash(key)]
 				respChan := make(chan []*pb.KeyValue)
+				errorChan := make(chan []uint32)
 				go SendRequestToReplica(
 					&value,
 					s.membershipList.Nodes,
@@ -207,9 +223,16 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 					s.addr,
 					ok,
 					respChan,
+					errorChan,
 				) //how to detect when write fails?
 				replicaResult := <-respChan
 				close(respChan)
+
+				errorResult := <-errorChan
+				close(errorChan)
+				for _, deadId := range errorResult {
+					s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
+				}
 				result := append(replicaResult, &value)
 				log.Print("coordinator, required number of nodes hv written")
 				return &pb.WriteResponse{KeyValue: result, Success: true}, nil
@@ -225,6 +248,24 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	}
 	return &pb.WriteResponse{Success: false, Message: "not responsible for this key"}, nil
 
+}
+func (s *Server) KillNode(ctx context.Context, in *pb.Empty) (*pb.Empty, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.amIAlive {
+		s.amIAlive = false
+		return &pb.Empty{}, nil
+	}
+	return &pb.Empty{}, status.Error(505, nodeFailure)
+}
+func (s *Server) ReviveNode(ctx context.Context, in *pb.Empty) (*pb.Empty, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.amIAlive {
+		s.amIAlive = true
+		return &pb.Empty{}, nil
+	}
+	return &pb.Empty{}, nil
 }
 
 func contains(slice []*pb.Node, node *pb.Node) bool {
@@ -323,9 +364,18 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	value, ok := s.store[hash.GenHash(key)]
 	if !in.IsReplica { //coordinator might not be responsible but try find anyways lmao
 		respChan := make(chan []*pb.KeyValue)
-		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan)
+		errorChan := make(chan []uint32)
+		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan, errorChan)
 		replicaResult := <-respChan
 		close(respChan)
+
+		errorResult := <-errorChan
+		close(errorChan)
+
+		for _, deadId := range errorResult {
+			s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
+		}
+
 		if ok {
 			replicaResult = append(replicaResult, &value) //contains the addresses of all stores
 		}
@@ -452,9 +502,12 @@ func (s *Server) SendGossip(ctx context.Context) {
 		s.mu.RUnlock()
 		resp, err := client.Gossip(ctx, &pb.GossipMessage{MembershipList: membershipList})
 		if err != nil {
+			log.Print("gossip condition: ", errors.Is(err, NodeDead))
+			if errors.Is(err, status.Error(505, nodeFailure)) {
+				s.updateMembershipList(false, targetNode)
+			}
 			log.Printf("fail to send gossip to %v", targetNode.Address)
 			// update membership list to change isAlive to false
-			s.updateMembershipList(false, targetNode)
 			continue
 		}
 
@@ -483,6 +536,8 @@ func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection
 			_, err2 := client.Ping(context.Background(), &pb.PingRequest{})
 			if err2 == nil {
 				ch <- connectedNode
+			} else if err2.Error() == nodeFailure {
+				s.updateMembershipList(false, pNode)
 			}
 		}(server)
 	}
@@ -568,7 +623,9 @@ func main() {
 	}
 
 	// Register the server with the gRPC server
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(server.nodeAliveInterceptor),
+	)
 	pb.RegisterKeyValueStoreServer(grpcServer, server)
 
 	log.Printf("Server listening at %v", lis.Addr())

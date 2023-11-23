@@ -35,6 +35,8 @@ type KeyValueStoreClient interface {
 	Delete(ctx context.Context, in *ReplicaDeleteRequest, opts ...grpc.CallOption) (*Empty, error)
 	BulkWrite(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*Empty, error)
 	Transfer(ctx context.Context, in *ReplicaTransferRequest, opts ...grpc.CallOption) (*Empty, error)
+	KillNode(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	ReviveNode(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type keyValueStoreClient struct {
@@ -144,6 +146,24 @@ func (c *keyValueStoreClient) Transfer(ctx context.Context, in *ReplicaTransferR
 	return out, nil
 }
 
+func (c *keyValueStoreClient) KillNode(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/KillNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *keyValueStoreClient) ReviveNode(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/ReviveNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KeyValueStoreServer is the server API for KeyValueStore service.
 // All implementations must embed UnimplementedKeyValueStoreServer
 // for forward compatibility
@@ -161,6 +181,8 @@ type KeyValueStoreServer interface {
 	Delete(context.Context, *ReplicaDeleteRequest) (*Empty, error)
 	BulkWrite(context.Context, *BulkWriteRequest) (*Empty, error)
 	Transfer(context.Context, *ReplicaTransferRequest) (*Empty, error)
+	KillNode(context.Context, *Empty) (*Empty, error)
+	ReviveNode(context.Context, *Empty) (*Empty, error)
 	mustEmbedUnimplementedKeyValueStoreServer()
 }
 
@@ -200,6 +222,12 @@ func (UnimplementedKeyValueStoreServer) BulkWrite(context.Context, *BulkWriteReq
 }
 func (UnimplementedKeyValueStoreServer) Transfer(context.Context, *ReplicaTransferRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Transfer not implemented")
+}
+func (UnimplementedKeyValueStoreServer) KillNode(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method KillNode not implemented")
+}
+func (UnimplementedKeyValueStoreServer) ReviveNode(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReviveNode not implemented")
 }
 func (UnimplementedKeyValueStoreServer) mustEmbedUnimplementedKeyValueStoreServer() {}
 
@@ -412,6 +440,42 @@ func _KeyValueStore_Transfer_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KeyValueStore_KillNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).KillNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/KillNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).KillNode(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KeyValueStore_ReviveNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).ReviveNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/ReviveNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).ReviveNode(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KeyValueStore_ServiceDesc is the grpc.ServiceDesc for KeyValueStore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -462,6 +526,14 @@ var KeyValueStore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Transfer",
 			Handler:    _KeyValueStore_Transfer_Handler,
+		},
+		{
+			MethodName: "KillNode",
+			Handler:    _KeyValueStore_KillNode_Handler,
+		},
+		{
+			MethodName: "ReviveNode",
+			Handler:    _KeyValueStore_ReviveNode_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

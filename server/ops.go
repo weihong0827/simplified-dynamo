@@ -19,7 +19,7 @@ const (
 )
 
 // GRPCOperation represents a function type for gRPC operations.
-type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv *pb.KeyValue, result chan<- *pb.KeyValue) error
+type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv *pb.KeyValue, result chan<- *pb.KeyValue, nodeError chan<- uint32, nodeId uint32) error
 
 // Make a gRPC read call.
 func performRead(
@@ -27,6 +27,8 @@ func performRead(
 	client pb.KeyValueStoreClient,
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
+	nodeErr chan<- uint32,
+	nodeId uint32,
 ) error {
 	defer func() {
 		if r := recover(); r != nil {
@@ -36,6 +38,9 @@ func performRead(
 
 	r, err := client.Read(ctx, &pb.ReadRequest{Key: kv.Key, IsReplica: true})
 	if err != nil {
+		if err.Error() == nodeFailure { //check err
+			nodeErr <- nodeId
+		}
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success && len(r.GetKeyValue()) == 1 {
@@ -55,6 +60,8 @@ func performWrite(
 	client pb.KeyValueStoreClient,
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
+	nodeErr chan<- uint32,
+	nodeId uint32,
 ) error {
 	// Placeholder: Add your write call and its specifics here.
 	// Example: `w, err := client.Write(ctx, &pb.WriteRequest{Key: key, Value: value})`
@@ -105,6 +112,8 @@ func performHintedHandoffWrite(
 	node *pb.Node,
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
+	nodeErr chan<- uint32,
+	nodeId uint32,
 ) error {
 	//TODO: call the write and handle error and return
 	r, err := client.HintedHandoffWrite(ctx, &pb.HintedHandoffWriteRequest{KeyValue: kv, Nodeid: node.Id})
@@ -154,6 +163,7 @@ func grpcCall(
 	op config.Operation,
 	nodes hash.NodeSlice,
 	result chan<- *pb.KeyValue,
+	nodeErrors chan<- uint32,
 ) error {
 
 	var operation GRPCOperation
@@ -170,7 +180,7 @@ func grpcCall(
 	log.Printf("coordinator connecting to node %v", node.Address)
 	conn, err := CreateGRPCConnection(node.Address)
 	client := pb.NewKeyValueStoreClient(conn)
-	err = operation(callCtx, client, kv, result)
+	err = operation(callCtx, client, kv, result, nodeErrors, node.Id)
 	conn.Close()
 	if err != nil && op == config.WRITE {
 		log.Print("Error in creating grpc connection, finding hinted handoff node:", err)
@@ -183,7 +193,7 @@ func grpcCall(
 			log.Print("contacting successor node: ", successors[0].Address)
 			conn, err = CreateGRPCConnection(successors[0].Address)
 			client := pb.NewKeyValueStoreClient(conn)
-			err = performHintedHandoffWrite(callCtx, client, node, kv, result)
+			err = performHintedHandoffWrite(callCtx, client, node, kv, result, nodeErrors, node.Id)
 			// log.Print("Hinted handoff error ", err)
 			conn.Close()
 		}
@@ -239,6 +249,7 @@ func SendRequestToReplica(
 	currAddr string,
 	coordsuccess bool,
 	respChan chan<- []*pb.KeyValue,
+	errorChan chan<- []uint32,
 ) {
 	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes)
 	if err != nil {
@@ -311,6 +322,8 @@ func SendRequestToReplica(
 	result := make(chan *pb.KeyValue)
 	defer close(result)
 
+	nodeErrors := make(chan uint32)
+	defer close(nodeErrors)
 	// var responseCounter int32
 	// done := make(chan bool)
 	// defer close(done)
@@ -340,7 +353,7 @@ func SendRequestToReplica(
 		wg.Add(1)
 		go func(n *pb.Node) {
 			defer wg.Done()
-			if err := grpcCall(ctx, cancel, n, kv, op, nodes, result); err != nil {
+			if err := grpcCall(ctx, cancel, n, kv, op, nodes, result, nodeErrors); err != nil {
 				log.Println("Error in gRPC call:", err)
 			}
 		}(node)
@@ -348,12 +361,17 @@ func SendRequestToReplica(
 
 	// Collect results until the desired number of responses is reached
 	var collectedResults []*pb.KeyValue
+	var errorResults []uint32
 	for {
-		res := <-result
-		collectedResults = append(collectedResults, res)
-
+		select {
+		case res := <-result:
+			collectedResults = append(collectedResults, res)
+		case grpCallError := <-nodeErrors:
+			errorResults = append(errorResults, grpCallError)
+		}
 		if len(collectedResults) >= int(requiredResponses) {
 			respChan <- collectedResults
+			errorChan <- errorResults
 			break
 		}
 	}
