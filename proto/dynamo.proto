@@ -25,6 +25,10 @@ service KeyValueStore {
   rpc BulkWrite(BulkWriteRequest) returns (Empty) {}
 
   rpc Transfer(ReplicaTransferRequest) returns (Empty){}
+
+  rpc KillNode(Empty) returns (Empty){}
+  rpc ReviveNode(Empty) returns (Empty){}
+  
 }
 
 
