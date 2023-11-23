@@ -15,14 +15,14 @@ func main() {
 
 	// log resp
 	log.Println(putresp)
-	
 
 	geturl := "http://127.0.0.1:8080/get?key=foo"
-    getresp, err := http.NewRequest("GET", geturl, nil)
-    if err != nil {
-        fmt.Print(err.Error())
-    }
+	getresp, err := http.NewRequest("GET", geturl, nil)
+	if err != nil {
+		fmt.Print(err.Error())
+	}
 
 	// log resp
 	log.Println(getresp)
 }
+

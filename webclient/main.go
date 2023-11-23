@@ -34,13 +34,13 @@ type Server struct {
 	Conn    *grpc.ClientConn
 }
 
-type Response struct {
-	Key             string            `JSON:"key"`
-	ReplicaResponse []ReplicaResponse `JSON:"replica_response"`
-	Hashvalue       uint32            `JSON:"hashvalue"`
+type ReadWriteResponse struct {
+	Key             string                     `JSON:"key"`
+	ReplicaResponse []ReadWriteReplicaResponse `JSON:"replica_response"`
+	Hashvalue       uint32                     `JSON:"hashvalue"`
 }
 
-type ReplicaResponse struct {
+type ReadWriteReplicaResponse struct {
 	Value       string           `JSON:"value"`
 	VectorClock map[uint32]int64 `JSON:"vector_clock"`
 }
@@ -52,8 +52,6 @@ func main() {
 	// Initialize the list of backend servers NEED TO RUN AT LEAST 4 NODES
 	servers = []Server{
 		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50051"), Address: "127.0.0.1:50051"}, nil},
-		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50052"), Address: "127.0.0.1:50052"}, nil},
-		// {&pb.Node{Id: hash.GenHash("127.0.0.1:50053"), Address: "127.0.0.1:50053"}, nil},
 	}
 
 	// Establish gRPC connections to all servers
@@ -162,7 +160,7 @@ func main() {
 		}
 
 		// Establish a gRPC connection to the fastest server
-		log.Print(fastestServer.Address.Address)
+		log.Printf("Fastest Node %v:", fastestServer.Address.Address)
 		conn, err := grpc.Dial(
 			fastestServer.Address.Address,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -188,63 +186,65 @@ func main() {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": resp.Message})
+		log.Printf("%v", resp)
+
+		c.JSON(http.StatusOK, gin.H{"message": "Write Successful!"})
 	})
 
-	// router.POST("/kill", func(c *gin.Context) {
-	// 	var killNodeAddress KillNode
-	// 	if err := c.ShouldBindJSON(&killNodeAddress); err != nil {
-	// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	// 		return
-	// 	}
+	router.POST("/kill", func(c *gin.Context) {
+		var killNodeAddress KillNode
+		if err := c.ShouldBindJSON(&killNodeAddress); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
-	// 	// connect to the node address that we want to kill
-	// 	for _, server := range servers {
-	// 		if server.Address.Address == killNodeAddress.Address {
-	// 			// Create a gRPC connection to the server
-	// 			client := pb.NewKeyValueStoreClient(server.Conn)
-	// 			log.Print("Client created")
-	// 			// TODO: Check how KillNode is implemented.
-	// 			_, err := client.KillNode(context.Background())
+		// connect to the node address that we want to kill
+		for _, server := range servers {
+			if server.Address.Address == killNodeAddress.Address {
+				// Create a gRPC connection to the server
+				client := pb.NewKeyValueStoreClient(server.Conn)
+				log.Print("Client created")
+				// TODO: Check how KillNode is implemented.
+				_, err := client.KillNode(context.Background())
 
-	// 			if err != nil {
-	// 				log.Printf("Failed to kill node: %v with error %v", killNodeAddress.Address, err)
-	// 				c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to kill node"})
-	// 				return
-	// 			}
-	// 		}
-	// 	}
+				if err != nil {
+					log.Printf("Failed to kill node: %v with error %v", killNodeAddress.Address, err)
+					c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to kill node"})
+					return
+				}
+			}
+		}
 
-	// 	c.JSON(http.StatusOK, gin.H{"message": "Node successfully killed!"})
+		c.JSON(http.StatusOK, gin.H{"message": "Node successfully killed!"})
+	})
 
-	// router.POST("/revive", func(c *gin.Context) {
-	// 	var reviveNodeAddress ReviveNode
-	// 	if err := c.ShouldBindJSON(&reviveNodeAddress); err != nil {
-	// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	// 		return
-	// 	}
+	router.POST("/revive", func(c *gin.Context) {
+		var reviveNodeAddress ReviveNode
+		if err := c.ShouldBindJSON(&reviveNodeAddress); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
-	// 	// connect to the node address that we want to kill
-	// 	for _, server := range servers {
-	// 		if server.Address.Address == reviveNodeAddress.Address {
-	// 			// Create a gRPC connection to the server
-	// 			client := pb.NewKeyValueStoreClient(server.Conn)
-	// 			log.Print("Client created")
-	// 			// TODO: Check how ReviveNode is implemented.
-	// 			_, err := client.ReviveNode(context.Background())
+		// connect to the node address that we want to kill
+		for _, server := range servers {
+			if server.Address.Address == reviveNodeAddress.Address {
+				// Create a gRPC connection to the server
+				client := pb.NewKeyValueStoreClient(server.Conn)
+				log.Print("Client created")
+				// TODO: Check how ReviveNode is implemented.
+				_, err := client.ReviveNode(context.Background())
 
-	// 			if err != nil {
-	// 				log.Printf("Failed to revive node: %v with error %v", killNodeAddress.Address, err)
-	// 				c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to revive node"})
-	// 				return
-	// 			}
-	// 		}
-	// 	}
-	// 	c.JSON(http.StatusOK, gin.H{"message": "Node successfully revived!"})
-	// })})
+				if err != nil {
+					log.Printf("Failed to revive node: %v with error %v", killNodeAddress.Address, err)
+					c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to revive node"})
+					return
+				}
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Node successfully revived!"})
+	})
 
 	router.Run(":8080")
-
 }
 
 func getFastestRespondingServer() (*Server, error) {
@@ -285,12 +285,12 @@ func getServersAddresses(servers []Server) []*pb.Node {
 	return addresses
 }
 
-func ConvertPbReadResponse(keyValue []*pb.KeyValue) Response {
+func ConvertPbReadResponse(keyValue []*pb.KeyValue) ReadWriteResponse {
 	log.Print("Keyvalue", keyValue)
-	var result Response
-	result = Response{
+	var result ReadWriteResponse
+	result = ReadWriteResponse{
 		Key:             keyValue[0].Key,
-		ReplicaResponse: make([]ReplicaResponse, len(keyValue)),
+		ReplicaResponse: make([]ReadWriteReplicaResponse, 0),
 		Hashvalue:       hash.GenHash(keyValue[0].Key),
 	}
 	log.Print("Key", keyValue[0].Key)
@@ -300,7 +300,7 @@ func ConvertPbReadResponse(keyValue []*pb.KeyValue) Response {
 		for k, v := range kv.VectorClock.Timestamps {
 			m[k] = v.ClokcVal
 		}
-		replicaResponse := ReplicaResponse{
+		replicaResponse := ReadWriteReplicaResponse{
 			Value:       kv.Value,
 			VectorClock: m,
 		}
@@ -308,5 +308,27 @@ func ConvertPbReadResponse(keyValue []*pb.KeyValue) Response {
 	}
 	log.Print("Replica Response", result.ReplicaResponse)
 
+	return result
+}
+
+func ConvertPbWriteResponse(keyValue []*pb.KeyValue) ReadWriteResponse {
+	var result ReadWriteResponse
+	result = ReadWriteResponse{
+		Key:             keyValue[0].Key,
+		ReplicaResponse: make([]ReadWriteReplicaResponse, 0),
+		Hashvalue:       hash.GenHash(keyValue[0].Key),
+	}
+	for _, kv := range keyValue {
+		m := make(map[uint32]int64)
+		for k, v := range kv.VectorClock.Timestamps {
+			m[k] = v.ClokcVal
+		}
+		replicaResponse := ReadWriteReplicaResponse{
+			Value:       kv.Value,
+			VectorClock: m,
+		}
+		result.ReplicaResponse = append(result.ReplicaResponse, replicaResponse)
+	}
+	log.Printf("Replica Response %v", result.ReplicaResponse)
 	return result
 }
