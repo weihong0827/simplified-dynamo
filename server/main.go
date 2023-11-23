@@ -116,6 +116,14 @@ func (s *Server) InitiateKeyRangeChange(
 		log.Println("Error When assigning key range change:", err)
 		return
 	}
+
+	// TODO: Handle edge case initiating.
+	if len(s.membershipList.Nodes) <= config.N+1 {
+		Transfer(s.store, newNode.Id, newNode.Id-1, newNode)
+		log.Println("There are not enough nodes in the network to delete from")
+		log.Println("Key range change completed")
+		return
+	}
 	// modify coordinatorNode
 	log.Printf(
 		"Transfering data from node %d to new node %d for key range %d to %d",
@@ -141,14 +149,6 @@ func (s *Server) InitiateKeyRangeChange(
 	log.Println("Coordinator node modification completed")
 
 	// Delete from other nodes
-	// Only delete if there are more than config.N + 1 nodes in the network
-
-	// TODO: Handle edge case initiating.
-	if len(s.membershipList.Nodes) <= config.N+1 {
-		log.Println("There are not enough nodes in the network to delete from")
-		log.Println("Key range change completed")
-		return
-	}
 	for i := 2; i <= config.N; i++ {
 		node := nodes[i]
 		startIdx := i - config.N + 1
@@ -178,11 +178,8 @@ func (s *Server) nodeAliveInterceptor(ctx context.Context, req interface{}, info
 	whitelistedMethods := map[string]bool{
 		"/dynamo.KeyValueStore/ReviveNode": true,
 	}
-	log.Print(info.FullMethod)
-	//
 	// Check if the method is whitelisted
 	if _, ok := whitelistedMethods[info.FullMethod]; ok {
-		// If whitelisted, directly call the handler
 		return handler(ctx, req)
 	}
 	if !s.amIAlive {
@@ -358,7 +355,7 @@ func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.E
 	log.Printf("Delete request received at node %d from range %d to %d", s.id, in.Start, in.End)
 
 	for key := range s.store {
-		if key >= in.Start && key <= in.End {
+		if IsKeyInRange(key, in.Start, in.End) {
 			delete(s.store, key)
 		}
 	}

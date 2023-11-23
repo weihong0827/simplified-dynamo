@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
-	pb "dynamoSimplified/pb"
 	"errors"
 	"log"
+
+	pb "dynamoSimplified/pb"
 )
 
 func Transfer(
@@ -16,7 +17,7 @@ func Transfer(
 	log.Print("bulk write function 1")
 	dataToTransfer := []*pb.KeyValue{}
 	for key, value := range store {
-		if key >= start && key < end {
+		if IsKeyInRange(key, start, end) {
 			dataToTransfer = append(dataToTransfer, &value)
 		}
 	}
@@ -37,11 +38,9 @@ func BulkWriteToTarget(kvToTransfer []*pb.KeyValue, targetNode *pb.Node) error {
 	defer conn.Close()
 
 	client := pb.NewKeyValueStoreClient(conn)
-	log.Printf("hi1")
 	_, err = client.BulkWrite(context.Background(), &pb.BulkWriteRequest{
 		KeyValue: kvToTransfer,
 	})
-	log.Printf("hi2")
 	return err
 }
 
