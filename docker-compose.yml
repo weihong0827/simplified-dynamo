@@ -66,6 +66,16 @@ services:
       webclient:
         condition: service_healthy
 
+  sixth-node:
+    build: .
+    command: ./bin/server --addr="sixth-node:50056" --webclient="http://webclient:8080/addNode?address=sixth-node:50056"
+    # command: ./bin/server --addr="127.0.0.1:50052" --webclient="http://webclient:8080/addNode?port=50052"
+    ports:
+      - "50056:50056"
+    depends_on:
+      webclient:
+        condition: service_healthy
+
 networks:
   dynamo:
     driver: bridge
