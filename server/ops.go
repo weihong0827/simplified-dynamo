@@ -15,6 +15,7 @@ const (
 	defaultTimeout  = time.Second
 	replicaError    = "error with replica operation: %v"
 	connectionError = "failed to connect to node: %v"
+	// simulateFailure = true
 )
 
 // GRPCOperation represents a function type for gRPC operations.
@@ -71,13 +72,76 @@ func performWrite(
 	}
 	return nil
 }
+
+// Make a gRPC write call.
+// func performOwnerNodeWrite(
+// 	ctx context.Context,
+// 	client pb.KeyValueStoreClient,
+// 	node *pb.Node,
+// 	kv *pb.KeyValue,
+// 	succesfulSend chan<- *pb.Node,
+// ) error {
+
+// 	// Placeholder: Add your write call and its specifics here.
+// 	// Example: `w, err := client.Write(ctx, &pb.WriteRequest{Key: key, Value: value})`
+
+// 	// Here's a hypothetical write success message. Adjust it to match your actual API.
+// 	// result <- pb.KeyValue{Key: key, Value: "Write Successful!"}
+// 	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: kv, IsReplica: true})
+// 	if err != nil {
+// 		return fmt.Errorf(replicaError, err)
+// 	}
+// 	if r.Success {
+// 		succesfulSend <- node
+// 	} else {
+// 		return fmt.Errorf(replicaError, "unexpected response format")
+// 	}
+// 	return nil
+// }
+
 func performHintedHandoffWrite(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
-	kv pb.KeyValue,
+	node *pb.Node,
+	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
 ) error {
 	//TODO: call the write and handle error and return
+	r, err := client.HintedHandoffWrite(ctx, &pb.HintedHandoffWriteRequest{KeyValue: kv, Nodeid: node.Id})
+	if err != nil {
+		return fmt.Errorf(replicaError, err)
+	}
+	if r.Success {
+		// return fmt.Errorf("Hinted Handoff Write successful")
+		result <- r.KeyValue
+		return nil
+	} else {
+		return fmt.Errorf(replicaError, "unexpected response format")
+	}
+}
+
+func hintedHandoffGrpcCall(ctx context.Context,
+	node *pb.Node,
+	kv *pb.KeyValue,
+) error {
+
+	_, callCancel := context.WithTimeout(ctx, defaultTimeout)
+	defer callCancel()
+
+	conn, err := CreateGRPCConnection(node.Address)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client := pb.NewKeyValueStoreClient(conn)
+	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: kv, IsReplica: true})
+	if err != nil {
+		return fmt.Errorf(replicaError, err)
+	}
+	if !r.Success {
+		return fmt.Errorf(replicaError, "unexpected response format")
+	}
 	return nil
 }
 
@@ -87,28 +151,85 @@ func grpcCall(
 	cancel context.CancelFunc,
 	node *pb.Node,
 	kv *pb.KeyValue,
-	op GRPCOperation,
-	timeout time.Duration,
+	op config.Operation,
+	nodes hash.NodeSlice,
 	result chan<- *pb.KeyValue,
 ) error {
-	callCtx, callCancel := context.WithTimeout(ctx, timeout)
+
+	var operation GRPCOperation
+	switch op {
+	case config.READ: //TODO: timeout on required responses
+		operation = performRead
+	case config.WRITE:
+		operation = performWrite
+	}
+
+	callCtx, callCancel := context.WithTimeout(ctx, defaultTimeout)
 	defer callCancel()
 
 	log.Printf("coordinator connecting to node %v", node.Address)
 	conn, err := CreateGRPCConnection(node.Address)
-	if err != nil {
-		return err
-		//TODO: update membership list.
-		//check op its a write req or read req
-		// if write
-		//TODO need to check what the error is and if needed perform hinted handoff
-		// create connection
-		// set op to performHintedHandoff
-	}
-	defer conn.Close()
 	client := pb.NewKeyValueStoreClient(conn)
-	return op(callCtx, client, kv, result)
+	err = operation(callCtx, client, kv, result)
+	conn.Close()
+	if err != nil && op == config.WRITE {
+		log.Print("Error in creating grpc connection, finding hinted handoff node:", err)
+		offsetid := config.N - 1
+		var successors []*pb.Node
+		for err != nil && offsetid != 0 { // if fail to establish contact with node, try to contact the next node
+			offsetid = (offsetid + 1) % len(nodes)
+			log.Print(offsetid)
+			successors, _ = hash.GetNodeFromKeyWithOffSet([]int{offsetid}, hash.GenHash(kv.Key), nodes)
+			log.Print("contacting successor node: ", successors[0].Address)
+			conn, err = CreateGRPCConnection(successors[0].Address)
+			client := pb.NewKeyValueStoreClient(conn)
+			err = performHintedHandoffWrite(callCtx, client, node, kv, result)
+			// log.Print("Hinted handoff error ", err)
+			conn.Close()
+		}
+		log.Print("Hinted handoff node found and performed: ", successors[0].Address)
+		return err
+
+	}
+	return err
 }
+
+// func SendToNode(
+// 	ctx context.Context,
+// 	nodes []*pb.HintedHandoffWriteRequest,
+// ) []*pb.Node {
+// 	succesfulSend := make(chan *pb.Node)
+// 	defer close(succesfulSend)
+
+// 	var wg sync.WaitGroup
+
+// 	for _, node := range nodes {
+// 		wg.Add(1)
+// 		go func(n *pb.HintedHandoffWriteRequest) {
+// 			defer wg.Done()
+// 			log.Printf("GRCP call to hintedhandoff %v", n.Node)
+
+// 			if err := hintedHandoffGrpcCall(ctx, n.Node, n.KeyValue); err != nil {
+// 				log.Println("Error in gRPC call:", err)
+// 			}
+// 		}(node)
+// 	}
+
+// 	go func() {
+// 		wg.Wait()
+// 		close(succesfulSend)
+// 	}()
+
+// 	var collectedSentNodes []*pb.Node
+
+// 	go func() {
+// 		for res := range succesfulSend {
+// 			collectedSentNodes = append(collectedSentNodes, res)
+// 		}
+// 	}()
+
+// 	return collectedSentNodes
+// }
 
 // Sends requests to the appropriate replicas.
 func SendRequestToReplica(
@@ -125,20 +246,61 @@ func SendRequestToReplica(
 		respChan <- nil
 	}
 
-	var operation GRPCOperation
+	// simulate failure
+	// if simulateFailure {
+
+	// 	target := targetNodes[0].Address
+	// 	log.Printf("Selected crash node %v, %s", targetNodes[0], target)
+
+	// 	for _, node := range nodes {
+	// 		if node.Address == target {
+	// 			for {
+	// 				if node.IsAlive == false {
+	// 					log.Printf("Target Node has been crashed forcefully. Node ID: %d, Node Address: %s", node.Id, node.Address)
+	// 					time.Sleep(time.Second * 5)
+	// 					log.Printf("========\n Programme continued after forced crash simulation \n========\n")
+
+	// 					break
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+
+	// 	// for {
+	// 	// 	time.Sleep(time.Second * 5)
+
+	// 	// 	log.Printf("GRPC connection crash node ")
+
+	// 	// 	conn, err := CreateGRPCConnection(target)
+	// 	// 	if err != nil {
+	// 	// 		log.Printf("GRPC call failed. Target Node has been crashed forcefully. Node Address: %s", target)
+	// 	// 		time.Sleep(time.Second * 5)
+	// 	// 		conn.Close()
+
+	// 	// 		log.Printf("========\n Programme continued after forced crash simulation \n========\n")
+
+	// 	// 		break
+	// 	// 	} else {
+	// 	// 		conn.Close()
+	// 	// 	}
+	// 	// }
+
+	// }
+
+	// var operation GRPCOperation
 	var requiredResponses int32
 	var wg sync.WaitGroup
 
 	switch op {
 	case config.READ: //TODO: timeout on required responses
-		operation = performRead
+		// operation = performRead
 		if coordsuccess {
 			requiredResponses = int32(config.R - 1)
 		} else {
 			requiredResponses = int32(config.R)
 		}
 	case config.WRITE:
-		operation = performWrite
+		// operation = performWrite
 		if coordsuccess {
 			requiredResponses = int32(config.W - 1)
 		} else {
@@ -169,6 +331,7 @@ func SendRequestToReplica(
 	// 		log.Print(responseCounter)
 	// 	}
 	// }()
+
 	log.Print(len(targetNodes))
 	for _, node := range targetNodes {
 		if node.Address == currAddr {
@@ -177,7 +340,7 @@ func SendRequestToReplica(
 		wg.Add(1)
 		go func(n *pb.Node) {
 			defer wg.Done()
-			if err := grpcCall(ctx, cancel, n, kv, operation, defaultTimeout, result); err != nil {
+			if err := grpcCall(ctx, cancel, n, kv, op, nodes, result); err != nil {
 				log.Println("Error in gRPC call:", err)
 			}
 		}(node)

@@ -50,8 +50,11 @@ func GetNodeFromKeyWithOffSet(
 	if index == -1 {
 		index = len(nodes) - 1
 	}
-	for offset, _ := range offsets {
+	for _, offset := range offsets {
 		indexToAdd := (index + offset) % len(nodes)
+		if indexToAdd == -1 {
+			indexToAdd = len(nodes) - 1
+		}
 		result = append(result, nodes[indexToAdd])
 	}
 	return result, nil
@@ -73,7 +76,10 @@ func GetResponsibleNode(key uint32, nodes NodeSlice) (string, error) {
 	return nodes[index].Address, nil
 }
 
-//TODO: write function to get successive k nodes for hinted handoff
+// TODO: write function to get successive k nodes for hinted handoff
+func GetSuccessiveNode(key uint32, nodes []*pb.Node) *pb.Node {
+	return nodes[0]
+}
 
 func GenHash(key string) uint32 {
 	h := md5.New()

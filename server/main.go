@@ -30,6 +30,7 @@ type Server struct {
 	mu             *sync.RWMutex // protects the following
 	store          map[uint32]pb.KeyValue
 	membershipList *pb.MembershipList
+	hintedList     *pb.HintedHandoffList
 	vectorClocks   map[string]pb.VectorClock
 }
 
@@ -56,6 +57,7 @@ func NewServer(addr string) *Server {
 				IsAlive:   true,
 			},
 		}},
+		hintedList:   &pb.HintedHandoffList{Requests: []*pb.HintedHandoffWriteRequest{}},
 		vectorClocks: make(map[string]pb.VectorClock),
 	}
 }
@@ -225,14 +227,76 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 
 }
 
-func (s *Server) HintedHandoffWriteRequest(
-	ctx context.Context,
-	in *pb.HintedHandoffWriteRequest,
-) (*pb.WriteResponse, error) {
+func contains(slice []*pb.Node, node *pb.Node) bool {
+	for _, e := range slice {
+		if e == node {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) checkHintedList(ctx context.Context) {
+	// sepearate function periodically check this struct has anything
+	// if yes send back to the actual node that it is meant for
+	// on every server receive
+
+	// periodically
+
+	log.Printf("Current server hintedhandoff list %v", s.hintedList)
+
+	ticker := time.NewTicker(10 * time.Second) // Adjust the interval as needed
+
+	for {
+		select {
+		case <-ticker.C:
+			if len(s.hintedList.Requests) != 0 {
+				log.Printf("Retry sending to hintedhandoff list %v", s.hintedList)
+				var updatedList []*pb.HintedHandoffWriteRequest
+				for _, req := range s.hintedList.Requests {
+					currentNode := s.getNodefromMembershipList(req.Nodeid)
+					if currentNode.IsAlive == true {
+						err := hintedHandoffGrpcCall(ctx, currentNode, req.KeyValue)
+						if err == nil {
+							log.Printf("Successfully sent hintedhandoff to %v", currentNode)
+						} else {
+							log.Printf("Failed to send hintedhandoff to %v", currentNode)
+							updatedList = append(updatedList, req)
+						}
+					} else {
+						updatedList = append(updatedList, req)
+						log.Print("original hinted handoff node still dead")
+					}
+				}
+				s.hintedList.Requests = updatedList
+
+				// result := SendToNode(ctx, s.hintedList.Requests)
+
+				// update list
+				// var updatedList []*pb.HintedHandoffWriteRequest
+				// for _, n := range s.hintedList.Requests {
+				// 	if !contains(results, n) {
+				// 		updatedList = append(updatedList, n)
+				// 	}
+				// }
+				// if updatedList != nil {
+				// 	s.hintedList.Requests = updatedList
+				// }
+			}
+		}
+	}
+}
+
+func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.HintedHandoffWriteResponse, error) {
+
+	log.Printf("HintedHandoffWrite request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
+	inactiveNode := s.getNodefromMembershipList(in.Nodeid)
+	//Update membership list
+	s.updateMembershipList(false, inactiveNode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// TODO
-	return &pb.WriteResponse{Success: true}, nil
+	s.hintedList.Requests = append(s.hintedList.Requests, in)
+	return &pb.HintedHandoffWriteResponse{KeyValue: in.KeyValue, Nodeid: in.Nodeid, Success: true}, nil
 }
 
 func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.Empty, error) {
@@ -370,19 +434,12 @@ func (s *Server) SendGossip(ctx context.Context) {
 		}
 
 		// create grpc client
+		log.Printf("SSSSSending gossip to %s.... %v ..... %d", targetNode, targetNode.Address, &targetNode.Address)
 		conn, err := grpc.Dial(targetNode.Address, grpc.WithInsecure())
 		if err != nil {
 			log.Printf("fail to dial: %v", err)
 			// update membership list to change isAlive to false
-			s.mu.Lock()
-			for _, node := range s.membershipList.Nodes {
-				if node.Address == targetNode.Address {
-					node.IsAlive = false
-					node.Timestamp = timestamppb.Now()
-					s.mu.Unlock()
-					break
-				}
-			}
+			s.updateMembershipList(false, targetNode)
 			continue
 		}
 		defer conn.Close()
@@ -397,28 +454,12 @@ func (s *Server) SendGossip(ctx context.Context) {
 		if err != nil {
 			log.Printf("fail to send gossip to %v", targetNode.Address)
 			// update membership list to change isAlive to false
-			s.mu.Lock()
-			for _, node := range s.membershipList.Nodes {
-				if node.Address == targetNode.Address {
-					node.IsAlive = false
-					node.Timestamp = timestamppb.Now()
-					s.mu.Unlock()
-					break
-				}
-			}
+			s.updateMembershipList(false, targetNode)
 			continue
 		}
 
 		if resp.Success {
-			s.mu.Lock()
-			for _, node := range s.membershipList.Nodes {
-				if node.Address == targetNode.Address {
-					node.IsAlive = true
-					node.Timestamp = timestamppb.Now()
-					s.mu.Unlock()
-					break
-				}
-			}
+			s.updateMembershipList(true, targetNode)
 		}
 		time.Sleep(time.Second * 5)
 	}
@@ -434,7 +475,7 @@ func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection
 			conn, err1 := CreateGRPCConnection(pNode.Address)
 			log.Print("Get fastest responding node: Pnode address", pNode.Address)
 			if err1 != nil {
-				s.updateMembershipList(true, pNode)
+				s.updateMembershipList(false, pNode)
 			}
 			client := pb.NewKeyValueStoreClient(conn)
 			connectedNode := &NodeConnection{Address: pNode, Conn: conn}
@@ -454,16 +495,27 @@ func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection
 	}
 }
 
-func (s *Server) updateMembershipList(true bool, targetNode *pb.Node) {
+func (s *Server) updateMembershipList(alive bool, targetNode *pb.Node) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, node := range s.membershipList.Nodes {
 		if node.Address == targetNode.Address {
-			node.IsAlive = false
+			node.IsAlive = alive
 			node.Timestamp = timestamppb.Now()
 			break
 		}
 	}
+}
+
+func (s *Server) getNodefromMembershipList(nodeid uint32) *pb.Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, node := range s.membershipList.Nodes {
+		if node.Id == nodeid {
+			return node
+		}
+	}
+	return nil
 }
 
 func (s *Server) Ping(ctx context.Context, in *pb.PingRequest) (*pb.PingResponse, error) {
@@ -561,9 +613,10 @@ func main() {
 	}
 
 	log.Printf("Starting gossip...")
-
 	// start gossiping
 	go server.SendGossip(context.Background())
+	log.Printf("Checking Hinted List %s", server.hintedList)
+	go server.checkHintedList(context.Background())
 	for {
 	}
 }
