@@ -5,10 +5,13 @@ import (
 	"dynamoSimplified/config"
 	"dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -38,7 +41,7 @@ func performRead(
 
 	r, err := client.Read(ctx, &pb.ReadRequest{Key: kv.Key, IsReplica: true})
 	if err != nil {
-		if err.Error() == nodeFailure { //check err
+		if errors.Is(err, status.Error(505, nodeFailure)) {
 			nodeErr <- nodeId
 		}
 		return fmt.Errorf(replicaError, err)
@@ -70,6 +73,9 @@ func performWrite(
 	// result <- pb.KeyValue{Key: key, Value: "Write Successful!"}
 	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: kv, IsReplica: true})
 	if err != nil {
+		if errors.Is(err, status.Error(505, nodeFailure)) {
+			nodeErr <- nodeId
+		}
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success {

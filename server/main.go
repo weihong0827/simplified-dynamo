@@ -471,6 +471,10 @@ func ReconcileMembershipList(
 	return &pb.MembershipList{Nodes: newList.Nodes}
 }
 
+func isFailedNode(err error) bool {
+	return errors.Is(err, status.Error(505, nodeFailure))
+}
+
 // create a method to periodically send gossip message to other nodes
 func (s *Server) SendGossip(ctx context.Context) {
 	for {
@@ -502,8 +506,8 @@ func (s *Server) SendGossip(ctx context.Context) {
 		s.mu.RUnlock()
 		resp, err := client.Gossip(ctx, &pb.GossipMessage{MembershipList: membershipList})
 		if err != nil {
-			log.Print("gossip condition: ", errors.Is(err, NodeDead))
-			if errors.Is(err, status.Error(505, nodeFailure)) {
+			// log.Print("gossip condition: ", errors.Is(err, NodeDead))
+			if isFailedNode(err) {
 				s.updateMembershipList(false, targetNode)
 			}
 			log.Printf("fail to send gossip to %v", targetNode.Address)
