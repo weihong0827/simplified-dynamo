@@ -21,6 +21,14 @@ import (
 	pb "dynamoSimplified/pb" // replace with your actual gRPC protos package
 )
 
+type KillNode struct {
+	Address string
+}
+
+type ReviveNode struct {
+	Address string
+}
+
 type Server struct {
 	Address *pb.Node
 	Conn    *grpc.ClientConn
@@ -44,7 +52,7 @@ func main() {
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
 		if err != nil {
-			log.Fatalf("Failed to connect to server at %s: %v", server.Address, err)
+			log.Printf("Failed to connect to server at %s: %v", server.Address, err)
 		}
 		servers[i].Conn = conn
 	}
@@ -73,7 +81,7 @@ func main() {
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			log.Fatalf("Failed to read key: %v with error %v", c.Query("key"), err)
+			log.Printf("Failed to read key: %v with error %v", c.Query("key"), err)
 			return
 		}
 
@@ -121,7 +129,7 @@ func main() {
 			fastestServer.Address.Address,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
-		
+
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -138,26 +146,81 @@ func main() {
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			log.Fatalf("Failed to write key: %v with error %v", c.Query("key"), err)
+			log.Printf("Failed to write key: %v with error %v", c.Query("key"), err)
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": resp.Message})
 	})
 
+	// router.POST("/kill", func(c *gin.Context) {
+	// 	var killNodeAddress KillNode
+	// 	if err := c.ShouldBindJSON(&killNodeAddress); err != nil {
+	// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 		return
+	// 	}
+
+	// 	// connect to the node address that we want to kill
+	// 	for _, server := range servers {
+	// 		if server.Address.Address == killNodeAddress.Address {
+	// 			// Create a gRPC connection to the server
+	// 			client := pb.NewKeyValueStoreClient(server.Conn)
+	// 			log.Print("Client created")
+	// 			// TODO: Check how KillNode is implemented.
+	// 			_, err := client.KillNode(context.Background())
+
+	// 			if err != nil {
+	// 				log.Printf("Failed to kill node: %v with error %v", killNodeAddress.Address, err)
+	// 				c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to kill node"})
+	// 				return
+	// 			}
+	// 		}
+	// 	}
+		
+	// 	c.JSON(http.StatusOK, gin.H{"message": "Node successfully killed!"})
+	
+		
+	
+	// router.POST("/revive", func(c *gin.Context) {
+	// 	var reviveNodeAddress ReviveNode
+	// 	if err := c.ShouldBindJSON(&reviveNodeAddress); err != nil {
+	// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 		return
+	// 	}
+
+	// 	// connect to the node address that we want to kill
+	// 	for _, server := range servers {
+	// 		if server.Address.Address == reviveNodeAddress.Address {
+	// 			// Create a gRPC connection to the server
+	// 			client := pb.NewKeyValueStoreClient(server.Conn)
+	// 			log.Print("Client created")
+	// 			// TODO: Check how ReviveNode is implemented.
+	// 			_, err := client.ReviveNode(context.Background())
+
+	// 			if err != nil {
+	// 				log.Printf("Failed to revive node: %v with error %v", killNodeAddress.Address, err)
+	// 				c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to revive node"})
+	// 				return
+	// 			}
+	// 		}
+	// 	}
+	// 	c.JSON(http.StatusOK, gin.H{"message": "Node successfully revived!"})
+	// })})
+
 	router.Run(":8080")
+
 }
 
 func getFastestRespondingServer() (*Server, error) {
 	// Create a channel to receive the first responding server
 	ch := make(chan Server, len(servers))
 
+	log.Print("Finding fastest responding server!")
 	// Ping all servers concurrently
 	for _, server := range servers {
-		log.Print("Ping to server", server.Address.Address)
+		log.Print("Pinging server", server.Address.Address)
 		go func(s Server) {
 			// Create a gRPC connection to the server
-
 			client := pb.NewKeyValueStoreClient(s.Conn)
 			log.Print("Client created")
 			// Call your gRPC ping method here (replace with your actual method)

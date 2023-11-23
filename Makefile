@@ -25,3 +25,6 @@ run-second-node:docker-build
 	docker run --network host --name second-node node ./bin/server --addr="127.0.0.1:50052" --webclient="http://127.0.0.1:8080/addNode?port=50052"
 
 
+run-sixth-node:docker-build
+	docker rm sixth-node
+	docker run --network host --name sixth-node node ./bin/server --addr="127.0.0.1:50056" --webclient="http://webclient:8080/addNode?port=50056"
