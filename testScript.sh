@@ -4,7 +4,12 @@ docker build -t node .
 
 docker rm -f $(docker ps -a -q)
 
-# docker network create --driver bridge dynamo
+# Check if the dynamo network exists and remove it
+if [ "$(docker network ls | grep dynamo)" ]; then
+    docker network rm dynamo
+fi
+
+docker network create --driver bridge dynamo
 
 docker run -d -p 8080:8080 --network dynamo --name webclient node ./bin/webclient 
 
