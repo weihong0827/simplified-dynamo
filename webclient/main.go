@@ -34,6 +34,17 @@ type Server struct {
 	Conn    *grpc.ClientConn
 }
 
+type Response struct {
+	Key             string            `JSON:"key"`
+	ReplicaResponse []ReplicaResponse `JSON:"replica_response"`
+	Hashvalue       uint32            `JSON:"hashvalue"`
+}
+
+type ReplicaResponse struct {
+	Value       string           `JSON:"value"`
+	VectorClock map[uint32]int64 `JSON:"vector_clock"`
+}
+
 var servers []Server
 var mutex = &sync.Mutex{}
 
@@ -85,7 +96,9 @@ func main() {
 			return
 		}
 
-		result := ConvertPbReadResponseKeyValueToSlice(resp.KeyValue)
+		result := ConvertPbReadResponse(resp.KeyValue)
+
+		log.Printf("%v", result)
 
 		// Forward the response from the backend server to the client
 		c.JSON(http.StatusOK, gin.H{"message": result})
@@ -176,11 +189,9 @@ func main() {
 	// 			}
 	// 		}
 	// 	}
-		
+
 	// 	c.JSON(http.StatusOK, gin.H{"message": "Node successfully killed!"})
-	
-		
-	
+
 	// router.POST("/revive", func(c *gin.Context) {
 	// 	var reviveNodeAddress ReviveNode
 	// 	if err := c.ShouldBindJSON(&reviveNodeAddress); err != nil {
@@ -249,10 +260,28 @@ func getServersAddresses(servers []Server) []*pb.Node {
 	return addresses
 }
 
-func ConvertPbReadResponseKeyValueToSlice(keyValue []*pb.KeyValue) []string {
-	var result []string
-	for _, kv := range keyValue {
-		result = append(result, kv.Value)
+func ConvertPbReadResponse(keyValue []*pb.KeyValue) Response {
+	log.Print("Keyvalue", keyValue)
+	var result Response
+	result = Response{
+		Key:             keyValue[0].Key,
+		ReplicaResponse: make([]ReplicaResponse, len(keyValue)),
+		Hashvalue:       hash.GenHash(keyValue[0].Key),
 	}
+	log.Print("Key", keyValue[0].Key)
+	log.Print("Hash", hash.GenHash(keyValue[0].Key))
+	for _, kv := range keyValue {
+		m := make(map[uint32]int64)
+		for k, v := range kv.VectorClock.Timestamps {
+			m[k] = v.ClokcVal
+		}
+		replicaResponse := ReplicaResponse{
+			Value:       kv.Value,
+			VectorClock: m,
+		}
+		result.ReplicaResponse = append(result.ReplicaResponse, replicaResponse)
+	}
+	log.Print("Replica Response", result.ReplicaResponse)
+
 	return result
 }

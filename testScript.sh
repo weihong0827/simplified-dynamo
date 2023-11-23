@@ -1,14 +1,13 @@
 #!/bin/bash
 
-# docker build -t node .
+docker build -t node .
 
 docker rm -f $(docker ps -a -q)
 
-docker network create --driver bridge dynamo
+# docker network create --driver bridge dynamo
 
 docker run -d -p 8080:8080 --network dynamo --name webclient node ./bin/webclient 
 
-sleep 5
 # Define the base port
 base_port=50051
 
