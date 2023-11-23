@@ -2,7 +2,7 @@
 
 echo "BUILDING NODE IMAGE"
 echo "==================="
-docker build -t node .
+# docker build -t node .
 
 docker rm -f $(docker ps -a -q)
 
@@ -18,12 +18,12 @@ echo "Running Webclient"
 docker run -d -p 8080:8080 --network dynamo --name webclient node ./bin/webclient 
 
 # Define the base port
-base_port=50051
+base_port=50053
 
 # Define the number of nodes
-num_nodes=5
+num_nodes=4
 
-echo "Runnign $num_nodes nodes"
+echo "Running $num_nodes nodes"
 
 # Loop to create nodes
 for (( i=0; i<num_nodes; i++ )); do
@@ -37,15 +37,70 @@ for (( i=0; i<num_nodes; i++ )); do
   docker run -d -p $port:$port --network dynamo --name "$node_name" node ./bin/server --addr="$node_name:$port" --webclient="http://webclient:8080/addNode?address=$node_name:$port"
 done
 
-echo "PUT "foo:bar" and GET "foo""
+docker run -d -p 50051:50051 --network dynamo --name "node-50051" node ./bin/server --addr="node-50051:50051" --webclient="http://webclient:8080/addNode?address=node-50051:50051" 
 
-go run test/test.go # GET and PUT
+echo "========================"
 
 sleep 3
 
-echo "Adding new node 'node-50056'"
-additionalNode=$((base_port + num_nodes))
+echo "PUT foo:bar"
+echo "========================"
+curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=bar'
+echo ""
 
-docker run -d -p $additionalNode:$additionalNode --network dynamo --name "node-$additionalNode" node ./bin/server --addr="node-$additionalNode:$additionalNode" --webclient="http://webclient:8080/addNode?address=node-$additionalNode:$additionalNode"
+echo "GET foo"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
 
-# go run test2.go # GET and PUT with failure
+sleep 3
+
+echo "Adding new node node-50052"
+echo "========================"
+docker run -d -p 50052:50052 --network dynamo --name "node-50052" node ./bin/server --addr="node-50052:50052" --webclient="http://webclient:8080/addNode?address=node-50052:50052" 
+
+sleep 3
+
+echo "Get foo"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+
+echo 'Killing node-50052'
+echo "========================"
+curl --location 'http://127.0.0.1:8080/kill' \
+--header 'Content-Type: application/json' \
+--data '{
+    "Address": "node-50052:50052"
+}'
+echo ""
+
+sleep 5
+
+echo 'Get "foo"'
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+
+echo "Reviving node-50052"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/revive' \
+--header 'Content-Type: application/json' \
+--data '{
+    "Address": "node-50052:50052"
+}'
+echo ""
+
+echo "Get foo"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+
+echo "Put foo:notbar"
+echo "========================"
+curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=notbar'
+echo ""
+
+echo "Get foo"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'

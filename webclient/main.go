@@ -102,31 +102,6 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": result})
 	})
 
-	router.GET("/killNode", func(c *gin.Context) {
-		address := c.Query("address")
-		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		client := pb.NewKeyValueStoreClient(conn)
-		_, err = client.KillNode(context.Background(), &pb.Empty{})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"message": "Killed node at address: " + address})
-	})
-	router.GET("/reviveNode", func(c *gin.Context) {
-		address := c.Query("address")
-		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		client := pb.NewKeyValueStoreClient(conn)
-		_, err = client.ReviveNode(context.Background(), &pb.Empty{})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"message": "Revive node at address: " + address})
-	})
-
 	router.GET("/addNode", func(c *gin.Context) {
 		mutex.Lock()
 		defer mutex.Unlock()
@@ -198,24 +173,15 @@ func main() {
 			return
 		}
 
-		// connect to the node address that we want to kill
-		for _, server := range servers {
-			if server.Address.Address == killNodeAddress.Address {
-				// Create a gRPC connection to the server
-				client := pb.NewKeyValueStoreClient(server.Conn)
-				log.Print("Client created")
-				// TODO: Check how KillNode is implemented.
-				_, err := client.KillNode(context.Background())
-
-				if err != nil {
-					log.Printf("Failed to kill node: %v with error %v", killNodeAddress.Address, err)
-					c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to kill node"})
-					return
-				}
-			}
+		conn, err := grpc.Dial(killNodeAddress.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		client := pb.NewKeyValueStoreClient(conn)
+		_, err = client.KillNode(context.Background(), &pb.Empty{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "Node successfully killed!"})
+		c.JSON(http.StatusOK, gin.H{"message": "Killed node at address: " + killNodeAddress.Address})
 	})
 
 	router.POST("/revive", func(c *gin.Context) {
@@ -225,31 +191,22 @@ func main() {
 			return
 		}
 
-		// connect to the node address that we want to kill
-		for _, server := range servers {
-			if server.Address.Address == reviveNodeAddress.Address {
-				// Create a gRPC connection to the server
-				client := pb.NewKeyValueStoreClient(server.Conn)
-				log.Print("Client created")
-				// TODO: Check how ReviveNode is implemented.
-				_, err := client.ReviveNode(context.Background())
-
-				if err != nil {
-					log.Printf("Failed to revive node: %v with error %v", killNodeAddress.Address, err)
-					c.JSON(http.StatusInternalServerError, gin.H{"Error": "Failed to revive node"})
-					return
-				}
-			}
+		conn, err := grpc.Dial(reviveNodeAddress.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		client := pb.NewKeyValueStoreClient(conn)
+		_, err = client.ReviveNode(context.Background(), &pb.Empty{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "Node successfully revived!"})
-	})
 
+		c.JSON(http.StatusOK, gin.H{"message": "Revive node at address: " + reviveNodeAddress.Address})
+	})
 	router.Run(":8080")
 }
 
 func getFastestRespondingServer() (*Server, error) {
 	// Create a channel to receive the first responding server
-	ch := make(chan Server, len(servers))
+	ch := make(chan Server, 1)
 
 	log.Print("Finding fastest responding server!")
 	// Ping all servers concurrently
@@ -262,9 +219,10 @@ func getFastestRespondingServer() (*Server, error) {
 			// Call your gRPC ping method here (replace with your actual method)
 			_, err := client.Ping(context.Background(), &pb.PingRequest{})
 			if err == nil {
+				log.Print("Server responded: ", s.Address.Address)
 				ch <- s
 			} else {
-				log.Print("Error in ping", err)
+				log.Print("Error in ping: ", err)
 			}
 		}(server)
 	}

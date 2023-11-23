@@ -123,6 +123,7 @@ func (s *Server) InitiateKeyRangeChange(
 		nodes[0].Id,
 		nodes[config.N-1].Id,
 	)
+	// [-1, 0, 1, 2, 3]
 	Transfer(s.store, nodes[0].Id, nodes[config.N-1].Id, newNode)
 
 	log.Printf(
@@ -141,6 +142,7 @@ func (s *Server) InitiateKeyRangeChange(
 	// Delete from other nodes
 	// Only delete if there are more than config.N + 1 nodes in the network
 
+	// TODO: Handle edge case initiating.
 	if len(s.membershipList.Nodes) <= config.N+1 {
 		log.Println("There are not enough nodes in the network to delete from")
 		log.Println("Key range change completed")
@@ -370,17 +372,23 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 		close(respChan)
 
 		errorResult := <-errorChan
+		log.Printf("error result %v", errorResult)
 		close(errorChan)
 
+		// s.mu.RUnlock()
 		for _, deadId := range errorResult {
 			s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
 		}
+		// s.mu.RLock()
+		// defer s.mu.RUnlock()
 
+		// s.mu.RLock()
 		if ok {
 			replicaResult = append(replicaResult, &value) //contains the addresses of all stores
 		}
 		//compare vector clocks
 		result := CompareVectorClocks(replicaResult)
+		// s.mu.RUnlock()
 		log.Printf("coordinator result of read %v", result)
 		if len(result) == 0 {
 			return &pb.ReadResponse{
@@ -557,8 +565,8 @@ func (s *Server) getFastestRespondingServer(servers []*pb.Node) (*NodeConnection
 }
 
 func (s *Server) updateMembershipList(alive bool, targetNode *pb.Node) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// s.mu.Lock()
+	// defer s.mu.Unlock()
 	for _, node := range s.membershipList.Nodes {
 		if node.Address == targetNode.Address {
 			node.IsAlive = alive
