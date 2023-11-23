@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"dynamoSimplified/config"
-	hash "dynamoSimplified/hash"
-	pb "dynamoSimplified/pb"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io/ioutil"
 	"log"
@@ -15,7 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"errors"
+	"dynamoSimplified/config"
+	hash "dynamoSimplified/hash"
+	pb "dynamoSimplified/pb"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -57,7 +57,7 @@ func NewServer(addr string) *Server {
 		mu:    &sync.RWMutex{},
 		store: make(map[uint32]pb.KeyValue),
 		membershipList: &pb.MembershipList{Nodes: []*pb.Node{
-			&pb.Node{
+			{
 				Id:        hash.GenHash(addr),
 				Address:   addr,
 				Timestamp: timestamppb.Now(),
@@ -69,6 +69,7 @@ func NewServer(addr string) *Server {
 		amIAlive:     true,
 	}
 }
+
 func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	// defer s.mu.Unlock()
@@ -115,7 +116,7 @@ func (s *Server) InitiateKeyRangeChange(
 		log.Println("Error When assigning key range change:", err)
 		return
 	}
-	//modify coordinatorNode
+	// modify coordinatorNode
 	log.Printf(
 		"Transfering data from node %d to new node %d for key range %d to %d",
 		s.id,
@@ -171,9 +172,19 @@ func (s *Server) InitiateKeyRangeChange(
 		}
 	}
 	log.Println("Key range change completed")
-
 }
+
 func (s *Server) nodeAliveInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	whitelistedMethods := map[string]bool{
+		"/dynamo.KeyValueStore/ReviveNode": true,
+	}
+	log.Print(info.FullMethod)
+	//
+	// Check if the method is whitelisted
+	if _, ok := whitelistedMethods[info.FullMethod]; ok {
+		// If whitelisted, directly call the handler
+		return handler(ctx, req)
+	}
 	if !s.amIAlive {
 		return nil, status.Error(505, nodeFailure)
 	}
@@ -191,7 +202,7 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 	key := in.KeyValue.Key
 
 	targetNodes, _ := hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
-	for _, node := range targetNodes { //check that you are indeed responsible for this key
+	for _, node := range targetNodes { // check that you are indeed responsible for this key
 		if node.Id == nodeID {
 			if !in.IsReplica {
 				var currentClock *pb.VectorClock
@@ -226,7 +237,7 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 					ok,
 					respChan,
 					errorChan,
-				) //how to detect when write fails?
+				) // how to detect when write fails?
 				replicaResult := <-respChan
 				close(respChan)
 
@@ -238,7 +249,7 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				result := append(replicaResult, &value)
 				log.Print("coordinator, required number of nodes hv written")
 				return &pb.WriteResponse{KeyValue: result, Success: true}, nil
-				//TODO: implement timeout when waited to long to get write success. or detect write failure
+				// TODO: implement timeout when waited to long to get write success. or detect write failure
 			}
 			s.store[hash.GenHash(key)] = *in.KeyValue
 			value, _ := s.store[hash.GenHash(key)]
@@ -249,8 +260,8 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 		}
 	}
 	return &pb.WriteResponse{Success: false, Message: "not responsible for this key"}, nil
-
 }
+
 func (s *Server) KillNode(ctx context.Context, in *pb.Empty) (*pb.Empty, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -260,6 +271,7 @@ func (s *Server) KillNode(ctx context.Context, in *pb.Empty) (*pb.Empty, error) 
 	}
 	return &pb.Empty{}, status.Error(505, nodeFailure)
 }
+
 func (s *Server) ReviveNode(ctx context.Context, in *pb.Empty) (*pb.Empty, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -331,10 +343,9 @@ func (s *Server) checkHintedList(ctx context.Context) {
 }
 
 func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.HintedHandoffWriteResponse, error) {
-
 	log.Printf("HintedHandoffWrite request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
 	inactiveNode := s.getNodefromMembershipList(in.Nodeid)
-	//Update membership list
+	// Update membership list
 	s.updateMembershipList(false, inactiveNode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -343,7 +354,7 @@ func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWri
 }
 
 func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.Empty, error) {
-	//TODO: Compare and update the membershiplist
+	// TODO: Compare and update the membershiplist
 	log.Printf("Delete request received at node %d from range %d to %d", s.id, in.Start, in.End)
 
 	for key := range s.store {
@@ -364,7 +375,7 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	kv := pb.KeyValue{Key: key}
 
 	value, ok := s.store[hash.GenHash(key)]
-	if !in.IsReplica { //coordinator might not be responsible but try find anyways lmao
+	if !in.IsReplica { // coordinator might not be responsible but try find anyways lmao
 		respChan := make(chan []*pb.KeyValue)
 		errorChan := make(chan []uint32)
 		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan, errorChan)
@@ -384,9 +395,9 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 
 		// s.mu.RLock()
 		if ok {
-			replicaResult = append(replicaResult, &value) //contains the addresses of all stores
+			replicaResult = append(replicaResult, &value) // contains the addresses of all stores
 		}
-		//compare vector clocks
+		// compare vector clocks
 		result := CompareVectorClocks(replicaResult)
 		// s.mu.RUnlock()
 		log.Printf("coordinator result of read %v", result)
@@ -427,7 +438,6 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error
 		},
 		Data: nil,
 	}, nil
-
 }
 
 // Gossip implements dynamo.KeyValueStoreServer
@@ -452,7 +462,7 @@ func ReconcileMembershipList(
 	list1 *pb.MembershipList,
 	list2 *pb.MembershipList,
 ) *pb.MembershipList {
-	var mp = make(map[uint32]*pb.Node)
+	mp := make(map[uint32]*pb.Node)
 
 	for _, node := range list1.Nodes {
 		mp[node.Id] = node
@@ -471,7 +481,7 @@ func ReconcileMembershipList(
 		}
 	}
 
-	var newList = pb.MembershipList{Nodes: []*pb.Node{}}
+	newList := pb.MembershipList{Nodes: []*pb.Node{}}
 	for _, node := range mp {
 		newList.Nodes = append(newList.Nodes, node)
 	}
@@ -482,7 +492,6 @@ func ReconcileMembershipList(
 func (s *Server) isFailedNode(err error, targetNode *pb.Node) {
 	if errors.Is(err, status.Error(505, nodeFailure)) {
 		s.updateMembershipList(false, targetNode)
-
 	}
 }
 
