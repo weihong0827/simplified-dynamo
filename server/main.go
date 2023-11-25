@@ -240,10 +240,11 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				close(respChan)
 
 				errorResult := <-errorChan
+				log.Print(errorResult)
 				close(errorChan)
-				for _, deadId := range errorResult {
-					s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
-				}
+				// for _, deadId := range errorResult {
+				// 	s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
+				// }
 				result := append(replicaResult, &value)
 				log.Print("coordinator, required number of nodes hv written")
 				return &pb.WriteResponse{KeyValue: result, Success: true}, nil
@@ -385,9 +386,9 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 		close(errorChan)
 
 		// s.mu.RUnlock()
-		for _, deadId := range errorResult {
-			s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
-		}
+		// for _, deadId := range errorResult {
+		// 	s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
+		// }
 		// s.mu.RLock()
 		// defer s.mu.RUnlock()
 
@@ -443,12 +444,12 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 	// Update nodes based on the received gossip message
 	s.mu.Lock()
 	s.membershipList = ReconcileMembershipList(s.membershipList, in.MembershipList)
-	log.Println("Membership list:")
+	// log.Println("Membership list:")
 	for _, node := range s.membershipList.Nodes {
 		if node.IsAlive {
-			log.Printf("Node %v is alive", node.Address)
+			// log.Printf("Node %v is alive", node.Address)
 		} else {
-			log.Printf("Node %v is dead", node.Address)
+			// log.Printf("Node %v is dead", node.Address)
 		}
 	}
 	s.mu.Unlock()
@@ -506,7 +507,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		}
 
 		// create grpc client
-		log.Printf("SSSSSending gossip to %s.... %v ..... %d", targetNode, targetNode.Address, &targetNode.Address)
+		// log.Printf("SSSSSending gossip to %s.... %v ..... %d", targetNode, targetNode.Address, &targetNode.Address)
 		conn, err := grpc.Dial(targetNode.Address, grpc.WithInsecure())
 		if err != nil {
 			log.Printf("fail to dial: %v", err)
@@ -535,7 +536,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		if resp.Success {
 			s.updateMembershipList(true, targetNode)
 		}
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * 2)
 	}
 }
 
