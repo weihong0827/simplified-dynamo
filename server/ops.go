@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
-	"dynamoSimplified/config"
-	"dynamoSimplified/hash"
-	pb "dynamoSimplified/pb"
 	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
+
+	"dynamoSimplified/config"
+	"dynamoSimplified/hash"
+	pb "dynamoSimplified/pb"
 
 	"google.golang.org/grpc/status"
 )
@@ -22,14 +23,14 @@ const (
 )
 
 // GRPCOperation represents a function type for gRPC operations.
-type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv *pb.KeyValue, result chan<- *pb.KeyValue, nodeError chan<- uint32, nodeId uint32) error
+type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv *pb.KeyValue, result chan<- map[uint32]*pb.KeyValue, nodeError chan<- uint32, nodeId uint32) error
 
 // Make a gRPC read call.
 func performRead(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
 	kv *pb.KeyValue,
-	result chan<- *pb.KeyValue,
+	result chan<- map[uint32]*pb.KeyValue,
 	nodeErr chan<- uint32,
 	nodeId uint32,
 ) error {
@@ -48,10 +49,10 @@ func performRead(
 	}
 	if r.Success && len(r.GetKeyValue()) == 1 {
 		log.Print("node read succes received at perform read")
-		result <- r.KeyValue[0]
+		result <- r.KeyValue
 	} else {
-		log.Print(r.Message)
-		result <- &pb.KeyValue{Key: "Read", Value: "Read Failed!"}
+		// log.Print(r.Message)
+		// result <- &pb.KeyValue{Key: "Read", Value: "Read Failed!"}
 		return fmt.Errorf(replicaError, r.Message)
 	}
 	return nil
@@ -62,7 +63,7 @@ func performWrite(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
 	kv *pb.KeyValue,
-	result chan<- *pb.KeyValue,
+	result chan<- map[uint32]*pb.KeyValue,
 	nodeErr chan<- uint32,
 	nodeId uint32,
 ) error {
@@ -79,7 +80,7 @@ func performWrite(
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success {
-		result <- r.KeyValue[0]
+		result <- r.KeyValue
 	} else {
 		return fmt.Errorf(replicaError, r.Message)
 	}
@@ -117,11 +118,11 @@ func performHintedHandoffWrite(
 	client pb.KeyValueStoreClient,
 	node *pb.Node,
 	kv *pb.KeyValue,
-	result chan<- *pb.KeyValue,
+	result chan<- map[uint32]*pb.KeyValue,
 	nodeErr chan<- uint32,
 	nodeId uint32,
 ) error {
-	//TODO: call the write and handle error and return
+	// TODO: call the write and handle error and return
 	r, err := client.HintedHandoffWrite(ctx, &pb.HintedHandoffWriteRequest{KeyValue: kv, Nodeid: node.Id})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
@@ -139,7 +140,6 @@ func hintedHandoffGrpcCall(ctx context.Context,
 	node *pb.Node,
 	kv *pb.KeyValue,
 ) error {
-
 	_, callCancel := context.WithTimeout(ctx, defaultTimeout)
 	defer callCancel()
 
@@ -168,13 +168,12 @@ func grpcCall(
 	kv *pb.KeyValue,
 	op config.Operation,
 	nodes hash.NodeSlice,
-	result chan<- *pb.KeyValue,
+	result chan<- map[uint32]*pb.KeyValue,
 	nodeErrors chan<- uint32,
 ) error {
-
 	var operation GRPCOperation
 	switch op {
-	case config.READ: //TODO: timeout on required responses
+	case config.READ: // TODO: timeout on required responses
 		operation = performRead
 	case config.WRITE:
 		operation = performWrite
@@ -254,7 +253,7 @@ func SendRequestToReplica(
 	op config.Operation,
 	currAddr string,
 	coordsuccess bool,
-	respChan chan<- []*pb.KeyValue,
+	respChan chan<- map[uint32]*pb.KeyValue,
 	errorChan chan<- []uint32,
 ) {
 	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes)
@@ -309,7 +308,7 @@ func SendRequestToReplica(
 	var wg sync.WaitGroup
 
 	switch op {
-	case config.READ: //TODO: timeout on required responses
+	case config.READ: // TODO: timeout on required responses
 		// operation = performRead
 		if coordsuccess {
 			requiredResponses = int32(config.R - 1)
@@ -325,7 +324,7 @@ func SendRequestToReplica(
 		}
 	}
 
-	result := make(chan *pb.KeyValue)
+	result := make(chan map[uint32]*pb.KeyValue)
 	defer close(result)
 
 	nodeErrors := make(chan uint32)
@@ -366,14 +365,20 @@ func SendRequestToReplica(
 	}
 
 	// Collect results until the desired number of responses is reached
-	var collectedResults []*pb.KeyValue
+	collectedResults := make(map[uint32]*pb.KeyValue)
 	var errorResults []uint32
 	for {
 		select {
 		case res := <-result:
-			collectedResults = append(collectedResults, res)
+			for k, v := range res {
+				collectedResults[k] = v
+			}
+
 		case grpCallError := <-nodeErrors:
 			errorResults = append(errorResults, grpCallError)
+		case <-time.After(time.Second):
+			log.Print("Timeout")
+			return
 		}
 		if len(collectedResults) >= int(requiredResponses) {
 			respChan <- collectedResults
@@ -382,5 +387,4 @@ func SendRequestToReplica(
 		}
 	}
 	wg.Wait()
-
 }

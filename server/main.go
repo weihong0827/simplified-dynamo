@@ -192,8 +192,9 @@ func (s *Server) nodeAliveInterceptor(ctx context.Context, req interface{}, info
 func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	log.Print(in)
 
-	log.Printf("write request received for %s", in.KeyValue.Key)
+	log.Printf("node %d write request received for %s", s.id, in.KeyValue.Key)
 	// this should be the ID of the current node
 	nodeID := s.id
 	key := in.KeyValue.Key
@@ -224,7 +225,7 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				in.KeyValue.VectorClock = currentClock
 				s.store[hash.GenHash(key)] = *in.KeyValue
 				value, ok := s.store[hash.GenHash(key)]
-				respChan := make(chan []*pb.KeyValue)
+				respChan := make(chan map[uint32]*pb.KeyValue)
 				errorChan := make(chan []uint32)
 				go SendRequestToReplica(
 					&value,
@@ -243,9 +244,9 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				for _, deadId := range errorResult {
 					s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
 				}
-				result := append(replicaResult, &value)
+				replicaResult[nodeID] = &value
 				log.Print("coordinator, required number of nodes hv written")
-				return &pb.WriteResponse{KeyValue: result, Success: true}, nil
+				return &pb.WriteResponse{KeyValue: replicaResult, Success: true}, nil
 				// TODO: implement timeout when waited to long to get write success. or detect write failure
 			}
 			s.store[hash.GenHash(key)] = *in.KeyValue
@@ -253,7 +254,9 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 			// for _, val := range s.store {
 			// 	log.Print(s.addr, " node store: ", val.Key, val.Value, val.VectorClock)
 			// }
-			return &pb.WriteResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
+			kvResponse := make(map[uint32]*pb.KeyValue)
+			kvResponse[nodeID] = &value
+			return &pb.WriteResponse{KeyValue: kvResponse, Success: true}, nil
 		}
 	}
 	return &pb.WriteResponse{Success: false, Message: "not responsible for this key"}, nil
@@ -347,7 +350,10 @@ func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.hintedList.Requests = append(s.hintedList.Requests, in)
-	return &pb.HintedHandoffWriteResponse{KeyValue: in.KeyValue, Nodeid: in.Nodeid, Success: true}, nil
+	response := map[uint32]*pb.KeyValue{
+		s.id: in.KeyValue,
+	}
+	return &pb.HintedHandoffWriteResponse{KeyValue: response, Nodeid: in.Nodeid, Success: true}, nil
 }
 
 func (s *Server) Delete(ctx context.Context, in *pb.ReplicaDeleteRequest) (*pb.Empty, error) {
@@ -373,7 +379,7 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 
 	value, ok := s.store[hash.GenHash(key)]
 	if !in.IsReplica { // coordinator might not be responsible but try find anyways lmao
-		respChan := make(chan []*pb.KeyValue)
+		respChan := make(chan map[uint32]*pb.KeyValue)
 		errorChan := make(chan []uint32)
 		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan, errorChan)
 		replicaResult := <-respChan
@@ -384,15 +390,15 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 		close(errorChan)
 
 		// s.mu.RUnlock()
-		for _, deadId := range errorResult {
-			s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
-		}
+		// for _, deadId := range errorResult {
+		// 	s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
+		// }
 		// s.mu.RLock()
 		// defer s.mu.RUnlock()
 
 		// s.mu.RLock()
 		if ok {
-			replicaResult = append(replicaResult, &value) // contains the addresses of all stores
+			replicaResult[s.id] = &value
 		}
 		// compare vector clocks
 		result := CompareVectorClocks(replicaResult)
@@ -411,8 +417,11 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	if !ok {
 		return &pb.ReadResponse{Success: false, Message: "Key not found"}, nil
 	}
+	currResult := map[uint32]*pb.KeyValue{
+		s.id: &value,
+	}
 
-	return &pb.ReadResponse{KeyValue: []*pb.KeyValue{&value}, Success: true}, nil
+	return &pb.ReadResponse{KeyValue: currResult, Success: true}, nil
 }
 
 // Join implements dynamo.NodeServServer

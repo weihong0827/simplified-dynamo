@@ -43,10 +43,13 @@ type ReadWriteResponse struct {
 type ReadWriteReplicaResponse struct {
 	Value       string           `JSON:"value"`
 	VectorClock map[uint32]int64 `JSON:"vector_clock"`
+	NodeId      uint32           `JSON:"node_id"`
 }
 
-var servers []Server
-var mutex = &sync.Mutex{}
+var (
+	servers []Server
+	mutex   = &sync.Mutex{}
+)
 
 func main() {
 	// Initialize the list of backend servers NEED TO RUN AT LEAST 4 NODES
@@ -82,6 +85,7 @@ func main() {
 		)
 
 		client := pb.NewKeyValueStoreClient(conn)
+		log.Printf("client initiated %s", fastestServer.Address.Address)
 
 		// TODO: Call your gRPC method here (replace with your actual method), Also make protobuf message
 		resp, err := client.Read(
@@ -94,7 +98,7 @@ func main() {
 			return
 		}
 
-		result := ConvertPbReadResponse(resp.KeyValue)
+		result := ConvertPbReadResponse(c.Query("key"), resp.KeyValue)
 
 		log.Printf("%v", result)
 
@@ -140,7 +144,6 @@ func main() {
 			fastestServer.Address.Address,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
-
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -154,7 +157,6 @@ func main() {
 				IsReplica: false,
 			},
 		)
-
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			log.Printf("Failed to write key: %v with error %v", c.Query("key"), err)
@@ -243,17 +245,15 @@ func getServersAddresses(servers []Server) []*pb.Node {
 	return addresses
 }
 
-func ConvertPbReadResponse(keyValue []*pb.KeyValue) ReadWriteResponse {
+func ConvertPbReadResponse(key string, keyValue map[uint32]*pb.KeyValue) ReadWriteResponse {
 	log.Print("Keyvalue", keyValue)
-	var result ReadWriteResponse
-	result = ReadWriteResponse{
-		Key:             keyValue[0].Key,
+
+	result := ReadWriteResponse{
+		Key:             key,
 		ReplicaResponse: make([]ReadWriteReplicaResponse, 0),
-		Hashvalue:       hash.GenHash(keyValue[0].Key),
+		Hashvalue:       hash.GenHash(key),
 	}
-	log.Print("Key", keyValue[0].Key)
-	log.Print("Hash", hash.GenHash(keyValue[0].Key))
-	for _, kv := range keyValue {
+	for sourceNodeId, kv := range keyValue {
 		m := make(map[uint32]int64)
 		for k, v := range kv.VectorClock.Timestamps {
 			m[k] = v.ClokcVal
@@ -261,6 +261,7 @@ func ConvertPbReadResponse(keyValue []*pb.KeyValue) ReadWriteResponse {
 		replicaResponse := ReadWriteReplicaResponse{
 			Value:       kv.Value,
 			VectorClock: m,
+			NodeId:      sourceNodeId,
 		}
 		result.ReplicaResponse = append(result.ReplicaResponse, replicaResponse)
 	}
