@@ -431,11 +431,11 @@ func (s *Server) Join(ctx context.Context, in *pb.Node) (*pb.JoinResponse, error
 
 	log.Printf("Join request received from %v", in.Address)
 
-	// Update membership list
-	s.membershipList.Nodes = append(s.membershipList.Nodes, in)
-
 	// update key range
 	s.InitiateKeyRangeChange(in)
+
+	// Update membership list
+	s.membershipList.Nodes = append(s.membershipList.Nodes, in)
 
 	// Send membership list to joining node
 	return &pb.JoinResponse{
