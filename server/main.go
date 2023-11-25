@@ -116,6 +116,7 @@ func (s *Server) InitiateKeyRangeChange(
 		log.Println("Error When assigning key range change:", err)
 		return
 	}
+	log.Printf("Nodes %v", nodes)
 
 	// TODO: Handle edge case initiating.
 	if len(s.membershipList.Nodes) <= config.N+1 {
@@ -240,11 +241,14 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				close(respChan)
 
 				errorResult := <-errorChan
+				log.Print(errorResult)
 				close(errorChan)
+
 				for _, deadId := range errorResult {
 					s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
 				}
 				replicaResult[nodeID] = &value
+
 				log.Print("coordinator, required number of nodes hv written")
 				return &pb.WriteResponse{KeyValue: replicaResult, Success: true}, nil
 				// TODO: implement timeout when waited to long to get write success. or detect write failure
@@ -451,12 +455,12 @@ func (s *Server) Gossip(ctx context.Context, in *pb.GossipMessage) (*pb.GossipAc
 	// Update nodes based on the received gossip message
 	s.mu.Lock()
 	s.membershipList = ReconcileMembershipList(s.membershipList, in.MembershipList)
-	log.Println("Membership list:")
+	// log.Println("Membership list:")
 	for _, node := range s.membershipList.Nodes {
 		if node.IsAlive {
-			log.Printf("Node %v is alive", node.Address)
+			// log.Printf("Node %v is alive", node.Address)
 		} else {
-			log.Printf("Node %v is dead", node.Address)
+			// log.Printf("Node %v is dead", node.Address)
 		}
 	}
 	s.mu.Unlock()
@@ -514,7 +518,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		}
 
 		// create grpc client
-		log.Printf("SSSSSending gossip to %s.... %v ..... %d", targetNode, targetNode.Address, &targetNode.Address)
+		// log.Printf("SSSSSending gossip to %s.... %v ..... %d", targetNode, targetNode.Address, &targetNode.Address)
 		conn, err := grpc.Dial(targetNode.Address, grpc.WithInsecure())
 		if err != nil {
 			log.Printf("fail to dial: %v", err)
@@ -543,7 +547,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		if resp.Success {
 			s.updateMembershipList(true, targetNode)
 		}
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * 2)
 	}
 }
 

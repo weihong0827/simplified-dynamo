@@ -78,6 +78,7 @@ func main() {
 			return
 		}
 
+		log.Print("Fastest Node %v to handle GET key: %v", fastestServer.Address.Address, c.Query("key"))
 		// Establish a gRPC connection to the fastest server
 		conn, err := grpc.Dial(
 			fastestServer.Address.Address,
@@ -100,7 +101,7 @@ func main() {
 
 		result := ConvertPbReadResponse(c.Query("key"), resp.KeyValue)
 
-		log.Printf("%v", result)
+		// log.Printf("%v", result)
 
 		// Forward the response from the backend server to the client
 		c.JSON(http.StatusOK, gin.H{"message": result})
@@ -139,7 +140,7 @@ func main() {
 		}
 
 		// Establish a gRPC connection to the fastest server
-		log.Printf("Fastest Node %v:", fastestServer.Address.Address)
+		log.Printf("Fastest Node %v to handle PUT key: %v, value %v", fastestServer.Address.Address, c.Query("key"), c.Query("value"))
 		conn, err := grpc.Dial(
 			fastestServer.Address.Address,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -213,24 +214,25 @@ func getFastestRespondingServer() (*Server, error) {
 	log.Print("Finding fastest responding server!")
 	// Ping all servers concurrently
 	for _, server := range servers {
-		log.Print("Pinging server", server.Address.Address)
+		// log.Print("Pinging server", server.Address.Address)
 		go func(s Server) {
 			// Create a gRPC connection to the server
 			client := pb.NewKeyValueStoreClient(s.Conn)
-			log.Print("Client created")
+			// log.Print("Client created")
 			// Call your gRPC ping method here (replace with your actual method)
 			_, err := client.Ping(context.Background(), &pb.PingRequest{})
 			if err == nil {
-				log.Print("Server responded: ", s.Address.Address)
+				// log.Print("Response From: ", s.Address.Address)
 				ch <- s
 			} else {
-				log.Print("Error in ping: ", err)
+				// log.Print("Error in contacting: ", s.Address.Id, err)
 			}
 		}(server)
 	}
 
 	select {
 	case server := <-ch:
+		log.Print("Fastest Responding Server: ", server.Address.Address)
 		return &server, nil
 	case <-time.After(3 * time.Second):
 		return nil, status.Error(codes.DeadlineExceeded, "No server responded in time")
@@ -253,6 +255,7 @@ func ConvertPbReadResponse(key string, keyValue map[uint32]*pb.KeyValue) ReadWri
 		ReplicaResponse: make([]ReadWriteReplicaResponse, 0),
 		Hashvalue:       hash.GenHash(key),
 	}
+  
 	for sourceNodeId, kv := range keyValue {
 		m := make(map[uint32]int64)
 		for k, v := range kv.VectorClock.Timestamps {
@@ -265,7 +268,7 @@ func ConvertPbReadResponse(key string, keyValue map[uint32]*pb.KeyValue) ReadWri
 		}
 		result.ReplicaResponse = append(result.ReplicaResponse, replicaResponse)
 	}
-	log.Print("Replica Response", result.ReplicaResponse)
+	// log.Print("Replica Response", result.ReplicaResponse)
 
 	return result
 }
@@ -288,6 +291,6 @@ func ConvertPbWriteResponse(keyValue []*pb.KeyValue) ReadWriteResponse {
 		}
 		result.ReplicaResponse = append(result.ReplicaResponse, replicaResponse)
 	}
-	log.Printf("Replica Response %v", result.ReplicaResponse)
+	// log.Printf("Replica Response %v", result.ReplicaResponse)
 	return result
 }

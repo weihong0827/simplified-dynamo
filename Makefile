@@ -27,4 +27,4 @@ run-second-node:docker-build
 
 run-sixth-node:docker-build
 	docker rm sixth-node
-	docker run --network host --name sixth-node node ./bin/server --addr="127.0.0.1:50056" --webclient="http://webclient:8080/addNode?port=50056"
+	docker run --network dynamo_default --name sixth-node node ./bin/server --addr="sixth-node:50056" --webclient="http://webclient:8080/addNode?address=sixth-node:50056"
