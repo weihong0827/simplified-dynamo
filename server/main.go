@@ -27,14 +27,16 @@ import (
 // TODO: store data in memory first
 type Server struct {
 	pb.UnimplementedKeyValueStoreServer
-	id             uint32
-	addr           string
-	mu             *sync.RWMutex // protects the following
-	store          map[uint32]pb.KeyValue
-	membershipList *pb.MembershipList
-	hintedList     *pb.HintedHandoffList
-	vectorClocks   map[string]pb.VectorClock
-	amIAlive       bool
+	id                        uint32
+	addr                      string
+	mu                        *sync.RWMutex // protects the following
+	store                     map[uint32]pb.KeyValue
+	membershipList            *pb.MembershipList
+	hintedList                *pb.HintedHandoffList
+	vectorClocks              map[string]pb.VectorClock
+	amIAlive                  bool
+	hintedHandedoffHoldingFor uint32
+	hintedHandoffstore        map[uint32]pb.KeyValue
 }
 
 const (
@@ -64,9 +66,10 @@ func NewServer(addr string) *Server {
 				IsAlive:   true,
 			},
 		}},
-		hintedList:   &pb.HintedHandoffList{Requests: []*pb.HintedHandoffWriteRequest{}},
-		vectorClocks: make(map[string]pb.VectorClock),
-		amIAlive:     true,
+		hintedList:         &pb.HintedHandoffList{Requests: []*pb.HintedHandoffWriteRequest{}},
+		vectorClocks:       make(map[string]pb.VectorClock),
+		amIAlive:           true,
+		hintedHandoffstore: make(map[uint32]pb.KeyValue),
 	}
 }
 
