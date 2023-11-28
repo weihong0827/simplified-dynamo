@@ -46,7 +46,9 @@ func compareClock(KV1 *pb.KeyValue, KV2 *pb.KeyValue) (bool, bool) {
 	for node, clock1 := range KV1.VectorClock.Timestamps { //extract all nodes in compare clock
 		clock2, found := KV2.VectorClock.Timestamps[node] //check against the clocks in the next machine
 		if !found {
-			clock2.ClokcVal = 0 // as if not written before.
+			clock2 = &pb.ClockStruct{
+				ClokcVal: 0,
+			}
 		}
 		if clock1.ClokcVal < clock2.ClokcVal {
 			lt = true
