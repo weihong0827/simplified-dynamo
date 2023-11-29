@@ -132,6 +132,26 @@ func performHintedHandoffWrite(
 	}
 }
 
+func performHintedHandoffRead(
+	ctx context.Context,
+	client pb.KeyValueStoreClient,
+	kv *pb.KeyValue,
+	result chan<- *pb.KeyValue,
+	nodeId uint32,
+) error {
+	//TODO: call the write and handle error and return
+	r, err := client.HintedHandoffRead(ctx, &pb.HintedHandoffReadRequest{KeyValue: kv, Nodeid: nodeId})
+	if err != nil {
+		return fmt.Errorf(replicaError, err)
+	}
+	if r.Success {
+		result <- r.KeyValue
+		return nil
+	} else {
+		return fmt.Errorf(replicaError, "unexpected response format")
+	}
+}
+
 func hintedHandoffGrpcCall(ctx context.Context,
 	node *pb.Node,
 	kv *pb.KeyValue,
@@ -186,7 +206,7 @@ func grpcCall(
 	conn.Close()
 	if errors.Is(err, status.Error(505, nodeFailure)) { //node dead, perform hinted handoff
 		if op == config.READ {
-			//TODO make hinted handoff read
+			operation = performHintedHandoffRead
 		} else if op == config.WRITE {
 			operation = performHintedHandoffWrite
 		}

@@ -18,6 +18,7 @@ service KeyValueStore {
 
   // temporarily send the replica to other machines to store 
   rpc HintedHandoffWrite(HintedHandoffWriteRequest) returns (HintedHandoffWriteResponse) {}
+  rpc HintedHandoffRead(HintedHandoffReadRequest) returns (HintedHandoffReadResponse) {}
   // when the node back alive again, it will send the replica back to the node
   rpc SendReplica(BulkWriteRequest) returns (WriteResponse) {}
 
@@ -73,6 +74,17 @@ message HintedHandoffWriteRequest {
 }
 
 message HintedHandoffWriteResponse {
+  KeyValue keyValue = 1;
+  uint32 nodeid = 3;
+  bool success = 2;
+}
+
+message HintedHandoffReadRequest {
+  KeyValue keyValue = 1;
+  uint32 nodeid = 2;
+}
+
+message HintedHandoffReadResponse {
   KeyValue keyValue = 1;
   uint32 nodeid = 3;
   bool success = 2;

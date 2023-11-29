@@ -30,6 +30,7 @@ type KeyValueStoreClient interface {
 	Gossip(ctx context.Context, in *GossipMessage, opts ...grpc.CallOption) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoffWrite(ctx context.Context, in *HintedHandoffWriteRequest, opts ...grpc.CallOption) (*HintedHandoffWriteResponse, error)
+	HintedHandoffRead(ctx context.Context, in *HintedHandoffReadRequest, opts ...grpc.CallOption) (*HintedHandoffReadResponse, error)
 	// when the node back alive again, it will send the replica back to the node
 	SendReplica(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*WriteResponse, error)
 	Delete(ctx context.Context, in *ReplicaDeleteRequest, opts ...grpc.CallOption) (*Empty, error)
@@ -110,6 +111,15 @@ func (c *keyValueStoreClient) HintedHandoffWrite(ctx context.Context, in *Hinted
 	return out, nil
 }
 
+func (c *keyValueStoreClient) HintedHandoffRead(ctx context.Context, in *HintedHandoffReadRequest, opts ...grpc.CallOption) (*HintedHandoffReadResponse, error) {
+	out := new(HintedHandoffReadResponse)
+	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/HintedHandoffRead", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *keyValueStoreClient) SendReplica(ctx context.Context, in *BulkWriteRequest, opts ...grpc.CallOption) (*WriteResponse, error) {
 	out := new(WriteResponse)
 	err := c.cc.Invoke(ctx, "/dynamo.KeyValueStore/SendReplica", in, out, opts...)
@@ -176,6 +186,7 @@ type KeyValueStoreServer interface {
 	Gossip(context.Context, *GossipMessage) (*GossipAck, error)
 	// temporarily send the replica to other machines to store
 	HintedHandoffWrite(context.Context, *HintedHandoffWriteRequest) (*HintedHandoffWriteResponse, error)
+	HintedHandoffRead(context.Context, *HintedHandoffReadRequest) (*HintedHandoffReadResponse, error)
 	// when the node back alive again, it will send the replica back to the node
 	SendReplica(context.Context, *BulkWriteRequest) (*WriteResponse, error)
 	Delete(context.Context, *ReplicaDeleteRequest) (*Empty, error)
@@ -210,6 +221,9 @@ func (UnimplementedKeyValueStoreServer) Gossip(context.Context, *GossipMessage) 
 }
 func (UnimplementedKeyValueStoreServer) HintedHandoffWrite(context.Context, *HintedHandoffWriteRequest) (*HintedHandoffWriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HintedHandoffWrite not implemented")
+}
+func (UnimplementedKeyValueStoreServer) HintedHandoffRead(context.Context, *HintedHandoffReadRequest) (*HintedHandoffReadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HintedHandoffRead not implemented")
 }
 func (UnimplementedKeyValueStoreServer) SendReplica(context.Context, *BulkWriteRequest) (*WriteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendReplica not implemented")
@@ -368,6 +382,24 @@ func _KeyValueStore_HintedHandoffWrite_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KeyValueStore_HintedHandoffRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HintedHandoffReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KeyValueStoreServer).HintedHandoffRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dynamo.KeyValueStore/HintedHandoffRead",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KeyValueStoreServer).HintedHandoffRead(ctx, req.(*HintedHandoffReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _KeyValueStore_SendReplica_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BulkWriteRequest)
 	if err := dec(in); err != nil {
@@ -510,6 +542,10 @@ var KeyValueStore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HintedHandoffWrite",
 			Handler:    _KeyValueStore_HintedHandoffWrite_Handler,
+		},
+		{
+			MethodName: "HintedHandoffRead",
+			Handler:    _KeyValueStore_HintedHandoffRead_Handler,
 		},
 		{
 			MethodName: "SendReplica",

@@ -336,6 +336,22 @@ func (s *Server) checkHintedStore(ctx context.Context) {
 	}
 }
 
+func (s *Server) HintedHandoffRead(ctx context.Context, in *pb.HintedHandoffReadRequest) (*pb.HintedHandoffReadResponse, error) {
+	log.Printf("HintedHandoffRead request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
+	if s.hintedHandedoffHoldingFor != 0 && s.hintedHandedoffHoldingFor != in.Nodeid {
+		return nil, status.Error(506, holding)
+	}
+
+	key := in.KeyValue.Key
+	value, ok := s.store[hash.GenHash(key)]
+
+	if !ok {
+		return &pb.HintedHandoffReadResponse{Success: false}, nil
+	}
+
+	return &pb.HintedHandoffReadResponse{KeyValue: &value, Nodeid: in.Nodeid, Success: true}, nil
+}
+
 func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.HintedHandoffWriteResponse, error) {
 	log.Printf("HintedHandoffWrite request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
 	if s.hintedHandedoffHoldingFor != 0 && s.hintedHandedoffHoldingFor != in.Nodeid {
