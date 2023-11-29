@@ -3,14 +3,15 @@
 echo "==================="
 echo "BUILDING NODE IMAGE"
 echo "==================="
-docker build -t node .
+docker build -t node ../.
 
 echo ""
 
 echo "==================="
 echo "REMOVING OLD NODES"
 echo "==================="
-containers = $(docker ps -a -q)
+
+containers=$(docker ps -a -q)
 if [ -n "$containers" ]; then
     echo "Deleting existing Docker containers..."
     docker rm -f $containers

@@ -3,7 +3,7 @@
 echo "==================="
 echo "BUILDING NODE IMAGE"
 echo "==================="
-# docker build -t node .
+docker build -t node ../.
 
 echo ""
 
@@ -144,6 +144,107 @@ echo "========================"
 curl --location 'http://127.0.0.1:8080/get?key=foo'
 echo ""
 echo ""
+
+echo "========================"
+echo 'Killing node-50052'
+echo "========================"
+curl --location 'http://127.0.0.1:8080/kill' \
+--header 'Content-Type: application/json' \
+--data '{
+    "Address": "node-50052:50052"
+}'
+echo ""
+echo ""
+
+echo "Waiting for 10 seconds, let the nodes realise that 52 is down, 56 should sub-in temporarily"
+sleep 10
+
+echo "========================"
+echo "PUT foo:bar"
+echo "========================"
+curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=bar'
+echo ""
+echo ""
+
+echo "========================"
+echo "PUT foo:bar"
+echo "========================"
+curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=bar'
+echo ""
+echo ""
+
+echo "========================"
+echo "PUT foo:bar"
+echo "========================"
+curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=bar'
+echo ""
+echo ""
+
+echo "========================"
+echo "GET foo expected bar"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+echo ""
+
+echo "========================"
+echo "Reviving node-50052"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/revive' \
+--header 'Content-Type: application/json' \
+--data '{
+    "Address": "node-50052:50052"
+}'
+echo ""
+echo ""
+
+echo "Waiting for 10 seconds, check if node-50052 gets data from hinted-handoff node"
+
+sleep 10
+
+echo "========================"
+echo "GET foo expected bar"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+echo ""
+
+echo "========================"
+echo "GET foo expected bar"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+echo ""
+
+echo "========================"
+echo "GET foo expected bar"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+echo ""
+
+echo "========================"
+echo "GET foo expected bar"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+echo ""
+
+echo "========================"
+echo "GET foo expected bar"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+echo ""
+
+echo "========================"
+echo "GET foo expected bar"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
+echo ""
+
+
 
 
 

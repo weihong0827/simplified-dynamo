@@ -2,7 +2,7 @@
 
 echo "BUILDING NODE IMAGE"
 echo "==================="
-docker build -t node .
+docker build -t node ../.
 
 docker rm -f $(docker ps -a -q)
 
