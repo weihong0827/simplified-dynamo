@@ -117,29 +117,45 @@ echo ""
 sleep 5
 
 
-echo "Put foo:notbar"
-echo "========================"
-curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=notbar'
-echo ""
+# echo "Put foo:notbar"
+# echo "========================"
+# curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=notbar'
+# echo ""
 
 # echo 'Get "foo"'
 # echo "========================"
 # curl --location 'http://127.0.0.1:8080/get?key=foo'
 # echo ""
 
-# echo "Reviving node-50052"
-# echo "========================"
-# curl --location 'http://127.0.0.1:8080/revive' \
-# --header 'Content-Type: application/json' \
-# --data '{
-#     "Address": "node-50052:50052"
-# }'
-# echo ""
+echo "Put foo:notbar"
+echo "========================"
+curl --location --request PUT 'http://127.0.0.1:8080/put?key=foo&value=notbar'
+echo ""
 
-# echo "Get foo"
-# echo "========================"
-# curl --location 'http://127.0.0.1:8080/get?key=foo'
-# echo ""
+sleep 15
+
+echo "Reviving node-50052"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/revive' \
+--header 'Content-Type: application/json' \
+--data '{
+    "Address": "node-50052:50052"
+}'
+echo ""
+
+echo "Reviving node-50051"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/revive' \
+--header 'Content-Type: application/json' \
+--data '{
+    "Address": "node-50051:50051"
+}'
+echo ""
+
+echo "Get foo"
+echo "========================"
+curl --location 'http://127.0.0.1:8080/get?key=foo'
+echo ""
 
 # echo "Put foo:notbar"
 # echo "========================"

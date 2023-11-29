@@ -32,7 +32,6 @@ type Server struct {
 	mu                        *sync.RWMutex // protects the following
 	store                     map[uint32]pb.KeyValue
 	membershipList            *pb.MembershipList
-	hintedList                *pb.HintedHandoffList
 	vectorClocks              map[string]pb.VectorClock
 	amIAlive                  bool
 	hintedHandedoffHoldingFor uint32
@@ -67,7 +66,6 @@ func NewServer(addr string) *Server {
 				IsAlive:   true,
 			},
 		}},
-		hintedList:                &pb.HintedHandoffList{Requests: []*pb.HintedHandoffWriteRequest{}},
 		vectorClocks:              make(map[string]pb.VectorClock),
 		amIAlive:                  true,
 		hintedHandoffstore:        make(map[uint32]pb.KeyValue),
@@ -298,8 +296,6 @@ func (s *Server) checkHintedStore(ctx context.Context) {
 
 	// periodically
 
-	log.Printf("Currently holding for %v", s.hintedHandedoffHoldingFor)
-
 	ticker := time.NewTicker(10 * time.Second) // Adjust the interval as needed
 
 	for {
@@ -337,10 +333,10 @@ func (s *Server) checkHintedStore(ctx context.Context) {
 }
 
 func (s *Server) HintedHandoffRead(ctx context.Context, in *pb.HintedHandoffReadRequest) (*pb.HintedHandoffReadResponse, error) {
-	log.Printf("HintedHandoffRead request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
 	if s.hintedHandedoffHoldingFor != 0 && s.hintedHandedoffHoldingFor != in.Nodeid {
 		return nil, status.Error(506, holding)
 	}
+	log.Printf("HintedHandoffRead request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
 
 	key := in.KeyValue.Key
 	value, ok := s.store[hash.GenHash(key)]
@@ -607,7 +603,6 @@ func (s *Server) getNodefromMembershipList(nodeid uint32) *pb.Node {
 }
 
 func (s *Server) Ping(ctx context.Context, in *pb.PingRequest) (*pb.PingResponse, error) {
-	log.Print("Ping request received")
 	return &pb.PingResponse{}, nil
 }
 
@@ -706,7 +701,7 @@ func main() {
 	log.Printf("Starting gossip...")
 	// start gossiping
 	go server.SendGossip(context.Background())
-	log.Printf("Checking Hinted List %s", server.hintedList)
+	log.Printf("Checking Hinted List %s", server.hintedHandoffstore)
 	go server.checkHintedStore(context.Background())
 	for {
 	}

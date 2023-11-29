@@ -47,7 +47,6 @@ func performRead(
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success && len(r.GetKeyValue()) == 1 {
-		log.Print("node read succes received at perform read")
 		result <- r.KeyValue[0]
 	} else {
 		log.Print(r.Message)
@@ -215,7 +214,6 @@ func grpcCall(
 		var successors []*pb.Node
 		for err != nil && offsetid != 0 { // if fail to establish contact with node, try to contact the next node
 			offsetid = (offsetid + 1) % len(nodes)
-			log.Print(offsetid)
 			successors, _ = hash.GetNodeFromKeyWithOffSet([]int{offsetid}, hash.GenHash(kv.Key), nodes)
 			log.Print("contacting successor node: ", successors[0].Address)
 			conn, err = CreateGRPCConnection(successors[0].Address)
