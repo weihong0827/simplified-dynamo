@@ -5,6 +5,7 @@ import (
 	"dynamoSimplified/config"
 	"dynamoSimplified/hash"
 	pb "dynamoSimplified/pb"
+
 	"errors"
 	"fmt"
 	"log"
@@ -22,7 +23,7 @@ const (
 )
 
 // GRPCOperation represents a function type for gRPC operations.
-type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv *pb.KeyValue, result chan<- *pb.KeyValue, nodeError chan<- uint32, nodeId uint32) error
+type GRPCOperation func(ctx context.Context, client pb.KeyValueStoreClient, kv *pb.KeyValue, result chan<- *pb.KeyValue, nodeId uint32) error
 
 // Make a gRPC read call.
 func performRead(
@@ -30,7 +31,6 @@ func performRead(
 	client pb.KeyValueStoreClient,
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
-	nodeErr chan<- uint32,
 	nodeId uint32,
 ) error {
 	defer func() {
@@ -42,7 +42,7 @@ func performRead(
 	r, err := client.Read(ctx, &pb.ReadRequest{Key: kv.Key, IsReplica: true})
 	if err != nil {
 		if errors.Is(err, status.Error(505, nodeFailure)) {
-			nodeErr <- nodeId
+			return status.Error(505, nodeFailure)
 		}
 		return fmt.Errorf(replicaError, err)
 	}
@@ -63,7 +63,6 @@ func performWrite(
 	client pb.KeyValueStoreClient,
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
-	nodeErr chan<- uint32,
 	nodeId uint32,
 ) error {
 	// Placeholder: Add your write call and its specifics here.
@@ -74,7 +73,7 @@ func performWrite(
 	r, err := client.Write(ctx, &pb.WriteRequest{KeyValue: kv, IsReplica: true})
 	if err != nil {
 		if errors.Is(err, status.Error(505, nodeFailure)) {
-			nodeErr <- nodeId
+			return status.Error(505, nodeFailure)
 		}
 		return fmt.Errorf(replicaError, err)
 	}
@@ -115,14 +114,12 @@ func performWrite(
 func performHintedHandoffWrite(
 	ctx context.Context,
 	client pb.KeyValueStoreClient,
-	node *pb.Node,
 	kv *pb.KeyValue,
 	result chan<- *pb.KeyValue,
-	nodeErr chan<- uint32,
 	nodeId uint32,
 ) error {
 	//TODO: call the write and handle error and return
-	r, err := client.HintedHandoffWrite(ctx, &pb.HintedHandoffWriteRequest{KeyValue: kv, Nodeid: node.Id})
+	r, err := client.HintedHandoffWrite(ctx, &pb.HintedHandoffWriteRequest{KeyValue: kv, Nodeid: nodeId})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
 	}
@@ -169,7 +166,6 @@ func grpcCall(
 	op config.Operation,
 	nodes hash.NodeSlice,
 	result chan<- *pb.KeyValue,
-	nodeErrors chan<- uint32,
 ) error {
 
 	var operation GRPCOperation
@@ -186,9 +182,14 @@ func grpcCall(
 	log.Printf("coordinator connecting to node %v", node.Address)
 	conn, err := CreateGRPCConnection(node.Address)
 	client := pb.NewKeyValueStoreClient(conn)
-	err = operation(callCtx, client, kv, result, nodeErrors, node.Id)
+	err = operation(callCtx, client, kv, result, node.Id)
 	conn.Close()
-	if err != nil && op == config.WRITE {
+	if errors.Is(err, status.Error(505, nodeFailure)) { //node dead, perform hinted handoff
+		if op == config.READ {
+			//TODO make hinted handoff read
+		} else if op == config.WRITE {
+			operation = performHintedHandoffWrite
+		}
 		log.Print("Error in creating grpc connection, finding hinted handoff node:", err)
 		offsetid := config.N - 1
 		var successors []*pb.Node
@@ -199,13 +200,11 @@ func grpcCall(
 			log.Print("contacting successor node: ", successors[0].Address)
 			conn, err = CreateGRPCConnection(successors[0].Address)
 			client := pb.NewKeyValueStoreClient(conn)
-			err = performHintedHandoffWrite(callCtx, client, node, kv, result, nodeErrors, node.Id)
-			// log.Print("Hinted handoff error ", err)
+			err = operation(callCtx, client, kv, result, node.Id) //try to hinted handoff read or write from this node
 			conn.Close()
 		}
 		log.Print("Hinted handoff node found and performed: ", successors[0].Address)
 		return err
-
 	}
 	return err
 }
@@ -255,54 +254,12 @@ func SendRequestToReplica(
 	currAddr string,
 	coordsuccess bool,
 	respChan chan<- []*pb.KeyValue,
-	errorChan chan<- []uint32,
 ) {
 	targetNodes, err := hash.GetNodesFromKey(hash.GenHash(kv.Key), nodes)
 	if err != nil {
 		log.Println("Error obtaining nodes for key:", err)
 		respChan <- nil
 	}
-
-	// simulate failure
-	// if simulateFailure {
-
-	// 	target := targetNodes[0].Address
-	// 	log.Printf("Selected crash node %v, %s", targetNodes[0], target)
-
-	// 	for _, node := range nodes {
-	// 		if node.Address == target {
-	// 			for {
-	// 				if node.IsAlive == false {
-	// 					log.Printf("Target Node has been crashed forcefully. Node ID: %d, Node Address: %s", node.Id, node.Address)
-	// 					time.Sleep(time.Second * 5)
-	// 					log.Printf("========\n Programme continued after forced crash simulation \n========\n")
-
-	// 					break
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-
-	// 	// for {
-	// 	// 	time.Sleep(time.Second * 5)
-
-	// 	// 	log.Printf("GRPC connection crash node ")
-
-	// 	// 	conn, err := CreateGRPCConnection(target)
-	// 	// 	if err != nil {
-	// 	// 		log.Printf("GRPC call failed. Target Node has been crashed forcefully. Node Address: %s", target)
-	// 	// 		time.Sleep(time.Second * 5)
-	// 	// 		conn.Close()
-
-	// 	// 		log.Printf("========\n Programme continued after forced crash simulation \n========\n")
-
-	// 	// 		break
-	// 	// 	} else {
-	// 	// 		conn.Close()
-	// 	// 	}
-	// 	// }
-
-	// }
 
 	// var operation GRPCOperation
 	var requiredResponses int32
@@ -328,8 +285,6 @@ func SendRequestToReplica(
 	result := make(chan *pb.KeyValue)
 	defer close(result)
 
-	nodeErrors := make(chan uint32)
-	defer close(nodeErrors)
 	// var responseCounter int32
 	// done := make(chan bool)
 	// defer close(done)
@@ -359,7 +314,7 @@ func SendRequestToReplica(
 		wg.Add(1)
 		go func(n *pb.Node) {
 			defer wg.Done()
-			if err := grpcCall(ctx, cancel, n, kv, op, nodes, result, nodeErrors); err != nil {
+			if err := grpcCall(ctx, cancel, n, kv, op, nodes, result); err != nil {
 				log.Println("Error in gRPC call:", err)
 			}
 		}(node)
@@ -367,17 +322,14 @@ func SendRequestToReplica(
 
 	// Collect results until the desired number of responses is reached
 	var collectedResults []*pb.KeyValue
-	var errorResults []uint32
 	for {
-		select {
-		case res := <-result:
-			collectedResults = append(collectedResults, res)
-		case grpCallError := <-nodeErrors:
-			errorResults = append(errorResults, grpCallError)
-		}
+		res := <-result
+		collectedResults = append(collectedResults, res)
+		// case grpCallError := <-nodeErrors:
+		// 	errorResults = append(errorResults, grpCallError)
+		// }
 		if len(collectedResults) >= int(requiredResponses) {
 			respChan <- collectedResults
-			errorChan <- errorResults
 			break
 		}
 	}

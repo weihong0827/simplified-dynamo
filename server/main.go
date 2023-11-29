@@ -41,6 +41,7 @@ type Server struct {
 
 const (
 	nodeFailure = "Node is dead"
+	holding     = "Already holding hinted handoff"
 )
 
 type NodeConnection struct {
@@ -66,16 +67,19 @@ func NewServer(addr string) *Server {
 				IsAlive:   true,
 			},
 		}},
-		hintedList:         &pb.HintedHandoffList{Requests: []*pb.HintedHandoffWriteRequest{}},
-		vectorClocks:       make(map[string]pb.VectorClock),
-		amIAlive:           true,
-		hintedHandoffstore: make(map[uint32]pb.KeyValue),
+		hintedList:                &pb.HintedHandoffList{Requests: []*pb.HintedHandoffWriteRequest{}},
+		vectorClocks:              make(map[string]pb.VectorClock),
+		amIAlive:                  true,
+		hintedHandoffstore:        make(map[uint32]pb.KeyValue),
+		hintedHandedoffHoldingFor: 0,
 	}
 }
 
 func (s *Server) Forward(ctx context.Context, in *pb.WriteRequest) (*pb.WriteResponse, error) {
+	log.Print("Hi from forward before lock")
 	s.mu.Lock()
 	// defer s.mu.Unlock()
+	log.Print("Hi from forward")
 	nodeID := s.id
 	key := in.KeyValue.Key
 	targetNodes, _ := hash.GetNodesFromKey(hash.GenHash(key), s.membershipList.Nodes)
@@ -229,7 +233,6 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 				s.store[hash.GenHash(key)] = *in.KeyValue
 				value, ok := s.store[hash.GenHash(key)]
 				respChan := make(chan []*pb.KeyValue)
-				errorChan := make(chan []uint32)
 				go SendRequestToReplica(
 					&value,
 					s.membershipList.Nodes,
@@ -237,14 +240,9 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 					s.addr,
 					ok,
 					respChan,
-					errorChan,
 				) // how to detect when write fails?
 				replicaResult := <-respChan
 				close(respChan)
-
-				errorResult := <-errorChan
-				log.Print(errorResult)
-				close(errorChan)
 				// for _, deadId := range errorResult {
 				// 	s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
 				// }
@@ -293,65 +291,64 @@ func contains(slice []*pb.Node, node *pb.Node) bool {
 	return false
 }
 
-func (s *Server) checkHintedList(ctx context.Context) {
+func (s *Server) checkHintedStore(ctx context.Context) {
 	// sepearate function periodically check this struct has anything
 	// if yes send back to the actual node that it is meant for
 	// on every server receive
 
 	// periodically
 
-	log.Printf("Current server hintedhandoff list %v", s.hintedList)
+	log.Printf("Currently holding for %v", s.hintedHandedoffHoldingFor)
 
 	ticker := time.NewTicker(10 * time.Second) // Adjust the interval as needed
 
 	for {
 		select {
 		case <-ticker.C:
-			if len(s.hintedList.Requests) != 0 {
-				log.Printf("Retry sending to hintedhandoff list %v", s.hintedList)
-				var updatedList []*pb.HintedHandoffWriteRequest
-				for _, req := range s.hintedList.Requests {
-					currentNode := s.getNodefromMembershipList(req.Nodeid)
-					if currentNode.IsAlive == true {
-						err := hintedHandoffGrpcCall(ctx, currentNode, req.KeyValue)
-						if err == nil {
-							log.Printf("Successfully sent hintedhandoff to %v", currentNode)
-						} else {
-							log.Printf("Failed to send hintedhandoff to %v", currentNode)
-							updatedList = append(updatedList, req)
+			s.mu.RLock()
+			if s.hintedHandedoffHoldingFor != 0 {
+				log.Printf("Currently holding for %v", s.hintedHandedoffHoldingFor)
+				log.Printf("Retry sending to hintedhandoff list %v", s.hintedHandoffstore)
+				holdingNode := s.getNodefromMembershipList(s.hintedHandedoffHoldingFor)
+				if holdingNode.IsAlive == true {
+					var err error
+					for _, kv := range s.hintedHandoffstore {
+						err = hintedHandoffGrpcCall(ctx, holdingNode, &kv)
+						if err != nil {
+							break
 						}
-					} else {
-						updatedList = append(updatedList, req)
-						log.Print("original hinted handoff node still dead")
 					}
+					if err == nil {
+						log.Printf("Successfully sent hintedhandoff to %v", holdingNode)
+						s.mu.Lock()
+						s.hintedHandedoffHoldingFor = 0
+						s.hintedHandoffstore = make(map[uint32]pb.KeyValue)
+						s.mu.Unlock()
+					} else {
+						log.Print("Failed to send hintedhandoff to ", holdingNode, ", error: ", err)
+					}
+				} else {
+					log.Print("original hinted handoff node still dead")
 				}
-				s.hintedList.Requests = updatedList
-
-				// result := SendToNode(ctx, s.hintedList.Requests)
-
-				// update list
-				// var updatedList []*pb.HintedHandoffWriteRequest
-				// for _, n := range s.hintedList.Requests {
-				// 	if !contains(results, n) {
-				// 		updatedList = append(updatedList, n)
-				// 	}
-				// }
-				// if updatedList != nil {
-				// 	s.hintedList.Requests = updatedList
-				// }
 			}
+			s.mu.RUnlock()
 		}
 	}
 }
 
 func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWriteRequest) (*pb.HintedHandoffWriteResponse, error) {
 	log.Printf("HintedHandoffWrite request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
+	if s.hintedHandedoffHoldingFor != 0 && s.hintedHandedoffHoldingFor != in.Nodeid {
+		return nil, status.Error(506, holding)
+	}
+
 	inactiveNode := s.getNodefromMembershipList(in.Nodeid)
 	// Update membership list
 	s.updateMembershipList(false, inactiveNode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.hintedList.Requests = append(s.hintedList.Requests, in)
+	s.hintedHandedoffHoldingFor = in.Nodeid
+	s.hintedHandoffstore[hash.GenHash(in.KeyValue.Key)] = *in.KeyValue
 	return &pb.HintedHandoffWriteResponse{KeyValue: in.KeyValue, Nodeid: in.Nodeid, Success: true}, nil
 }
 
@@ -379,14 +376,9 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	value, ok := s.store[hash.GenHash(key)]
 	if !in.IsReplica { // coordinator might not be responsible but try find anyways lmao
 		respChan := make(chan []*pb.KeyValue)
-		errorChan := make(chan []uint32)
-		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan, errorChan)
+		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan)
 		replicaResult := <-respChan
 		close(respChan)
-
-		errorResult := <-errorChan
-		log.Printf("error result %v", errorResult)
-		close(errorChan)
 
 		// s.mu.RUnlock()
 		// for _, deadId := range errorResult {
@@ -599,6 +591,7 @@ func (s *Server) getNodefromMembershipList(nodeid uint32) *pb.Node {
 }
 
 func (s *Server) Ping(ctx context.Context, in *pb.PingRequest) (*pb.PingResponse, error) {
+	log.Print("Ping request received")
 	return &pb.PingResponse{}, nil
 }
 
@@ -698,7 +691,7 @@ func main() {
 	// start gossiping
 	go server.SendGossip(context.Background())
 	log.Printf("Checking Hinted List %s", server.hintedList)
-	go server.checkHintedList(context.Background())
+	go server.checkHintedStore(context.Background())
 	for {
 	}
 }
