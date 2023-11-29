@@ -2,40 +2,48 @@ package main
 
 import (
 	pb "dynamoSimplified/pb"
-	"log"
 )
 
 // Find out the concurrent key value pair from the vector clocks
 // Return the concurrent key value pair, or value array
 func CompareVectorClocks(data []*pb.KeyValue) []*pb.KeyValue {
-
 	if len(data) == 1 {
 		return data
 	}
+
 	var current *pb.KeyValue
 	i := 0
+
 	for i < len(data) {
 		if data[i].Value == "Read Failed!" {
-			log.Print()
 			data = delete_data(i, data)
 			continue
 		}
+
 		if current == nil {
 			current = data[i]
 			data = delete_data(i, data)
 			continue
 		}
+
 		lt, mt := compareClock(current, data[i])
-		if !lt { //there are no elements that are less than the current clock, the first clock is ahead of current
+
+		// if lt and mt are true, then the two clocks are concurrent
+		// if lt is true, then the current clock is behind the data[i] clock
+		// if mt is true, then the current clock is ahead of the data[i] clock
+		// if lt and mt are false, then the two clocks are equal
+		if lt && mt {
+			i++
+		} else if lt {
 			current = data[i]
 			data = delete_data(i, data)
-			i = 0
-		} else if mt { //there are elements that are mt and lt the current thus they are concurrent
-			i += 1
-		} else { //no elements mt the current so it is behind the current
+		} else if mt {
+			data = delete_data(i, data)
+		} else {
 			data = delete_data(i, data)
 		}
 	}
+
 	data = append(data, current)
 	return data
 }

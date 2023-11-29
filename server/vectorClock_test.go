@@ -426,6 +426,42 @@ func TestDeleteDataEnd(t *testing.T) {
 
 }
 
+func TestCompareVectorClocksOneData(t *testing.T) {
+	var data []*pb.KeyValue
+
+	// the data has len of 1
+	data = make([]*pb.KeyValue, 0)
+	data = append(data, &pb.KeyValue{
+		Key:   "foo",
+		Value: "bar",
+		VectorClock: &pb.VectorClock{
+			Timestamps: map[uint32]*pb.ClockStruct{
+				1: &pb.ClockStruct{
+					ClokcVal: 1,
+				},
+				2: &pb.ClockStruct{
+					ClokcVal: 1,
+				},
+			},
+		},
+	})
+
+	newData := CompareVectorClocks(data)
+
+	if len(newData) != 1 {
+		t.Errorf("Expected len: %v, actual len: %v", 2, len(data))
+	}
+
+	if newData[0].VectorClock.Timestamps[1].ClokcVal != 1 {
+		t.Errorf("Expected clock: %v, actual clock: %v", 1, newData[0].VectorClock.Timestamps[1].ClokcVal)
+	}
+
+	if newData[0].VectorClock.Timestamps[2].ClokcVal != 1 {
+		t.Errorf("Expected clock: %v, actual clock: %v", 1, newData[0].VectorClock.Timestamps[2].ClokcVal)
+	}
+
+}
+
 func TestCompareVectorClocksSame(t *testing.T) {
 	var data []*pb.KeyValue
 
@@ -531,42 +567,6 @@ func TestCompareVectorClocksConcurrent(t *testing.T) {
 	}
 }
 
-func TestCompareVectorClocksOneData(t *testing.T) {
-	var data []*pb.KeyValue
-
-	// the data has len of 2
-	data = make([]*pb.KeyValue, 0)
-	data = append(data, &pb.KeyValue{
-		Key:   "foo",
-		Value: "bar",
-		VectorClock: &pb.VectorClock{
-			Timestamps: map[uint32]*pb.ClockStruct{
-				1: &pb.ClockStruct{
-					ClokcVal: 1,
-				},
-				2: &pb.ClockStruct{
-					ClokcVal: 1,
-				},
-			},
-		},
-	})
-
-	newData := CompareVectorClocks(data)
-
-	if len(newData) != 1 {
-		t.Errorf("Expected len: %v, actual len: %v", 2, len(data))
-	}
-
-	if newData[0].VectorClock.Timestamps[1].ClokcVal != 1 {
-		t.Errorf("Expected clock: %v, actual clock: %v", 1, newData[0].VectorClock.Timestamps[1].ClokcVal)
-	}
-
-	if newData[0].VectorClock.Timestamps[2].ClokcVal != 1 {
-		t.Errorf("Expected clock: %v, actual clock: %v", 1, newData[0].VectorClock.Timestamps[2].ClokcVal)
-	}
-
-}
-
 func TestCompareVectorClocksBehind(t *testing.T) {
 	var data []*pb.KeyValue
 
@@ -649,6 +649,46 @@ func TestCompareVectorClocksAhead(t *testing.T) {
 				},
 			},
 		},
+	})
+
+	newData := CompareVectorClocks(data)
+
+	if len(newData) != 1 {
+		t.Errorf("Expected len: %v, actual len: %v", 1, len(data))
+	}
+
+	if newData[0].VectorClock.Timestamps[1].ClokcVal != 2 {
+		t.Errorf("Expected clock: %v, actual clock: %v", 2, newData[0].VectorClock.Timestamps[1].ClokcVal)
+	}
+
+	if newData[0].VectorClock.Timestamps[2].ClokcVal != 1 {
+		t.Errorf("Expected clock: %v, actual clock: %v", 1, newData[0].VectorClock.Timestamps[2].ClokcVal)
+	}
+
+}
+
+func TestCompareVectorClocksReadFailed(t *testing.T) {
+	var data []*pb.KeyValue
+
+	// the data has len of 2 with one read failed
+	data = make([]*pb.KeyValue, 0)
+	data = append(data, &pb.KeyValue{
+		Key:   "foo",
+		Value: "bar",
+		VectorClock: &pb.VectorClock{
+			Timestamps: map[uint32]*pb.ClockStruct{
+				1: &pb.ClockStruct{
+					ClokcVal: 2,
+				},
+				2: &pb.ClockStruct{
+					ClokcVal: 1,
+				},
+			},
+		},
+	})
+	data = append(data, &pb.KeyValue{
+		Key:   "Read",
+		Value: "Read Failed!",
 	})
 
 	newData := CompareVectorClocks(data)
