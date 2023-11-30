@@ -296,7 +296,7 @@ func (s *Server) checkHintedStore(ctx context.Context) {
 
 	// periodically
 
-	ticker := time.NewTicker(3 * time.Second) // Adjust the interval as needed
+	ticker := time.NewTicker(2 * time.Second) // Adjust the interval as needed
 
 	for {
 		select {
@@ -316,10 +316,12 @@ func (s *Server) checkHintedStore(ctx context.Context) {
 					}
 					if err == nil {
 						log.Printf("Successfully sent hintedhandoff to %v", holdingNode)
+						s.mu.RUnlock()
 						s.mu.Lock()
 						s.hintedHandedoffHoldingFor = 0
 						s.hintedHandoffstore = make(map[uint32]pb.KeyValue)
 						s.mu.Unlock()
+						s.mu.RLock()
 					} else {
 						log.Print("Failed to send hintedhandoff to ", holdingNode, ", error: ", err)
 					}
@@ -546,7 +548,7 @@ func (s *Server) SendGossip(ctx context.Context) {
 		if resp.Success {
 			s.updateMembershipList(true, targetNode)
 		}
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Second * 1)
 	}
 }
 

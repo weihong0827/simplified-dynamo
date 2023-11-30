@@ -3,7 +3,7 @@
 echo -e "==================="
 echo -e "BUILDING NODE IMAGE"
 echo -e "===================\n"
-docker build -t node ../.
+# docker build -t node ../.
 
 echo -e "==================="
 echo -e "REMOVING OLD NODES"
@@ -172,9 +172,19 @@ curl --location 'http://127.0.0.1:8080/revive' \
 }'
 echo -e "\n"
 
-echo -e "Waiting for 10 seconds, check if node-50052 gets data from hinted-handoff node\n"
+echo -e "========================"
+echo -e "Reviving node-50051"
+echo -e "========================"
+curl --location 'http://127.0.0.1:8080/revive' \
+--header 'Content-Type: application/json' \
+--data '{
+    "Address": "node-50051:50051"
+}'
+echo -e "\n"
 
-sleep 10
+echo -e "Waiting for 20 seconds, let hinted handoff do its thing\n"
+
+sleep 20
 
 echo -e "========================"
 echo -e "GET foo expected hintedhandoff"
