@@ -144,6 +144,7 @@ func performHintedHandoffRead(
 		return fmt.Errorf(replicaError, err)
 	}
 	if r.Success {
+		log.Print("Hinted Handoff Read successful")
 		result <- r.KeyValue
 		return nil
 	} else {
@@ -220,6 +221,7 @@ func grpcCall(
 			client := pb.NewKeyValueStoreClient(conn)
 			err = operation(callCtx, client, kv, result, node.Id) //try to hinted handoff read or write from this node
 			conn.Close()
+			log.Print("successor node error: ", err)
 		}
 		log.Print("Hinted handoff node found and performed: ", successors[0].Address)
 		return err

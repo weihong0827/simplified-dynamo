@@ -296,7 +296,7 @@ func (s *Server) checkHintedStore(ctx context.Context) {
 
 	// periodically
 
-	ticker := time.NewTicker(10 * time.Second) // Adjust the interval as needed
+	ticker := time.NewTicker(3 * time.Second) // Adjust the interval as needed
 
 	for {
 		select {
@@ -334,12 +334,13 @@ func (s *Server) checkHintedStore(ctx context.Context) {
 
 func (s *Server) HintedHandoffRead(ctx context.Context, in *pb.HintedHandoffReadRequest) (*pb.HintedHandoffReadResponse, error) {
 	if s.hintedHandedoffHoldingFor != 0 && s.hintedHandedoffHoldingFor != in.Nodeid {
+		print(s.hintedHandedoffHoldingFor, in.Nodeid)
 		return nil, status.Error(506, holding)
 	}
 	log.Printf("HintedHandoffRead request received for key : %s, by Node %d", in.KeyValue.Key, in.Nodeid)
 
 	key := in.KeyValue.Key
-	value, ok := s.store[hash.GenHash(key)]
+	value, ok := s.hintedHandoffstore[hash.GenHash(key)]
 
 	if !ok {
 		return &pb.HintedHandoffReadResponse{Success: false}, nil
@@ -361,6 +362,8 @@ func (s *Server) HintedHandoffWrite(ctx context.Context, in *pb.HintedHandoffWri
 	defer s.mu.Unlock()
 	s.hintedHandedoffHoldingFor = in.Nodeid
 	s.hintedHandoffstore[hash.GenHash(in.KeyValue.Key)] = *in.KeyValue
+	_, ok := s.store[hash.GenHash(in.KeyValue.Key)]
+	log.Print("stored hinted handoff: ", ok)
 	return &pb.HintedHandoffWriteResponse{KeyValue: in.KeyValue, Nodeid: in.Nodeid, Success: true}, nil
 }
 
