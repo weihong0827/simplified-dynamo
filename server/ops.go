@@ -2,15 +2,15 @@ package main
 
 import (
 	"context"
-	"dynamoSimplified/config"
-	"dynamoSimplified/hash"
-	pb "dynamoSimplified/pb"
-
 	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
+
+	"dynamoSimplified/config"
+	"dynamoSimplified/hash"
+	pb "dynamoSimplified/pb"
 
 	"google.golang.org/grpc/status"
 )
@@ -117,7 +117,7 @@ func performHintedHandoffWrite(
 	result chan<- *pb.KeyValue,
 	nodeId uint32,
 ) error {
-	//TODO: call the write and handle error and return
+	// TODO: call the write and handle error and return
 	r, err := client.HintedHandoffWrite(ctx, &pb.HintedHandoffWriteRequest{KeyValue: kv, Nodeid: nodeId})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
@@ -138,7 +138,7 @@ func performHintedHandoffRead(
 	result chan<- *pb.KeyValue,
 	nodeId uint32,
 ) error {
-	//TODO: call the write and handle error and return
+	// TODO: call the write and handle error and return
 	r, err := client.HintedHandoffRead(ctx, &pb.HintedHandoffReadRequest{KeyValue: kv, Nodeid: nodeId})
 	if err != nil {
 		return fmt.Errorf(replicaError, err)
@@ -156,7 +156,6 @@ func hintedHandoffGrpcCall(ctx context.Context,
 	node *pb.Node,
 	kv *pb.KeyValue,
 ) error {
-
 	_, callCancel := context.WithTimeout(ctx, defaultTimeout)
 	defer callCancel()
 
@@ -187,10 +186,9 @@ func grpcCall(
 	nodes hash.NodeSlice,
 	result chan<- *pb.KeyValue,
 ) error {
-
 	var operation GRPCOperation
 	switch op {
-	case config.READ: //TODO: timeout on required responses
+	case config.READ: // TODO: timeout on required responses
 		operation = performRead
 	case config.WRITE:
 		operation = performWrite
@@ -204,7 +202,7 @@ func grpcCall(
 	client := pb.NewKeyValueStoreClient(conn)
 	err = operation(callCtx, client, kv, result, node.Id)
 	conn.Close()
-	if errors.Is(err, status.Error(505, nodeFailure)) { //node dead, perform hinted handoff
+	if errors.Is(err, status.Error(505, nodeFailure)) { // node dead, perform hinted handoff
 		if op == config.READ {
 			operation = performHintedHandoffRead
 		} else if op == config.WRITE {
@@ -219,7 +217,7 @@ func grpcCall(
 			log.Print("contacting successor node: ", successors[0].Address)
 			conn, err = CreateGRPCConnection(successors[0].Address)
 			client := pb.NewKeyValueStoreClient(conn)
-			err = operation(callCtx, client, kv, result, node.Id) //try to hinted handoff read or write from this node
+			err = operation(callCtx, client, kv, result, node.Id) // try to hinted handoff read or write from this node
 			conn.Close()
 			log.Print("successor node error: ", err)
 		}
@@ -286,7 +284,7 @@ func SendRequestToReplica(
 	var wg sync.WaitGroup
 
 	switch op {
-	case config.READ: //TODO: timeout on required responses
+	case config.READ: // TODO: timeout on required responses
 		// operation = performRead
 		if coordsuccess {
 			requiredResponses = int32(config.R - 1)
@@ -342,17 +340,23 @@ func SendRequestToReplica(
 
 	// Collect results until the desired number of responses is reached
 	var collectedResults []*pb.KeyValue
+exitloop:
 	for {
-		res := <-result
-		collectedResults = append(collectedResults, res)
-		// case grpCallError := <-nodeErrors:
-		// 	errorResults = append(errorResults, grpCallError)
-		// }
-		if len(collectedResults) >= int(requiredResponses) {
-			respChan <- collectedResults
-			break
+		select {
+		case res := <-result:
+
+			collectedResults = append(collectedResults, res)
+			// case grpCallError := <-nodeErrors:
+			// 	errorResults = append(errorResults, grpCallError)
+			// }
+			if len(collectedResults) >= int(requiredResponses) {
+				respChan <- collectedResults
+				break exitloop
+			}
+		case <-time.After(defaultTimeout):
+
+			break exitloop
 		}
 	}
 	wg.Wait()
-
 }

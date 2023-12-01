@@ -239,7 +239,16 @@ func (s *Server) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteRespo
 					ok,
 					respChan,
 				) // how to detect when write fails?
-				replicaResult := <-respChan
+				var replicaResult []*pb.KeyValue
+				select {
+
+				case result := <-respChan:
+					replicaResult = result
+				case <-time.After(3 * time.Second):
+					log.Print("coordinator, timed out waiting for replica")
+					return &pb.WriteResponse{Success: false, Message: "timed out waiting for replica"}, nil
+
+				}
 				close(respChan)
 				// for _, deadId := range errorResult {
 				// 	s.updateMembershipList(false, s.getNodefromMembershipList(deadId))
@@ -394,7 +403,15 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 	if !in.IsReplica { // coordinator might not be responsible but try find anyways lmao
 		respChan := make(chan []*pb.KeyValue)
 		go SendRequestToReplica(&kv, s.membershipList.Nodes, config.READ, s.addr, ok, respChan)
-		replicaResult := <-respChan
+		var replicaResult []*pb.KeyValue
+		select {
+
+		case result := <-respChan:
+			replicaResult = result
+		case <-time.After(3 * time.Second):
+			log.Print("coordinator, timed out waiting for replica")
+			return &pb.ReadResponse{Success: false, Message: "timed out waiting for replica"}, nil
+		}
 		close(respChan)
 
 		// s.mu.RUnlock()
@@ -407,6 +424,9 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 		// s.mu.RLock()
 		if ok {
 			replicaResult = append(replicaResult, &value) // contains the addresses of all stores
+		}
+		if len(replicaResult) < config.N {
+			return &pb.ReadResponse{Success: false, Message: "Does not satisfy quorum"}, nil
 		}
 		// compare vector clocks
 		result := CompareVectorClocks(replicaResult)

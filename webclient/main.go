@@ -45,8 +45,10 @@ type ReadWriteReplicaResponse struct {
 	VectorClock map[uint32]int64 `JSON:"vector_clock"`
 }
 
-var servers []Server
-var mutex = &sync.Mutex{}
+var (
+	servers []Server
+	mutex   = &sync.Mutex{}
+)
 
 func main() {
 	// Initialize the list of backend servers NEED TO RUN AT LEAST 4 NODES
@@ -92,6 +94,11 @@ func main() {
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			log.Printf("Failed to read key: %v with error %v", c.Query("key"), err)
+			return
+		}
+		if !resp.Success {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": resp.Message})
+			log.Printf("Failed to read key: %v with error %v", c.Query("key"), resp.Message)
 			return
 		}
 
@@ -141,7 +148,6 @@ func main() {
 			fastestServer.Address.Address,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
-
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -155,7 +161,6 @@ func main() {
 				IsReplica: false,
 			},
 		)
-
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			log.Printf("Failed to write key: %v with error %v", c.Query("key"), err)
