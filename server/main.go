@@ -425,7 +425,7 @@ func (s *Server) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadResponse
 		if ok {
 			replicaResult = append(replicaResult, &value) // contains the addresses of all stores
 		}
-		if len(replicaResult) < config.N {
+		if len(replicaResult) < config.R {
 			return &pb.ReadResponse{Success: false, Message: "Does not satisfy quorum"}, nil
 		}
 		// compare vector clocks
