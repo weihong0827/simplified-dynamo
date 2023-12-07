@@ -283,6 +283,7 @@ cd ./scripts
 ## Contributors ✨
 
 Thanks go to these wonderful people:
+
 <a href="https://github.com/weihong0827/simplified-dynamo/graphs/contributors">
 <img src="https://contrib.rocks/image?repo=weihong0827/simplified-dynamo" />
 </a>
