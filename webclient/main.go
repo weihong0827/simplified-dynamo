@@ -77,7 +77,7 @@ func main() {
 			return
 		}
 
-		log.Print("Fastest Node %v to handle GET key: %v", fastestServer.Address.Address, c.Query("key"))
+		log.Printf("Fastest Node %s to handle GET key: %s", fastestServer.Address.Address, c.Query("key"))
 		// Establish a gRPC connection to the fastest server
 		conn, err := grpc.Dial(
 			fastestServer.Address.Address,

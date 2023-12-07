@@ -20,7 +20,7 @@ You can build the entire network using the `docker compose` file
 
 It contains a `webclient` which is a simple web client to interact with the network and `node` container which is the actual network
 
-Just simplily run `docker-compose up --build` in the terminal and it should build the network for you
+Just simply run `docker-compose up --build` in the terminal and it should build the network for you
 
 If you wish to add more nodes to the network, you can simply add more nodes in the `docker-compose.yml` file with similar fields and run `docker-compose up --build` again
 
